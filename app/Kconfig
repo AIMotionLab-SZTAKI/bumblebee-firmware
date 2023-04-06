@@ -86,7 +86,7 @@ endmenu
 
 config SHOW_TAKEOFF_HEIGHT_CM
     int "Takeoff height, in centimeters"
-    default 100
+    default 50
     help
         Altitude that the drone should take off to at the start of the show,
         assuming that the ground is at Z=0.

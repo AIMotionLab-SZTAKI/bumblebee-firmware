@@ -81,12 +81,12 @@ static const customParamTableEntry_t params[] = {
 
 #ifdef CONFIG_PLATFORM_BOLT
   /* Larger Bolt-bases show drones are okay with a lower thrust base */
-  { "posCtlPid", "thrustBase", 30000, TYPE_INT },
+  { "posCtlPid", "thrustBase", 17000, TYPE_INT },
 
   /* Currently we always use single-cell batteries so the voltage thresholds
    * need to be adjusted */
-  { "pm", "lowVoltage", 3.2 },
-  { "pm", "criticalLowVoltage", 3.0 },
+  { "pm", "lowVoltage", 13.2 },
+  { "pm", "criticalLowVoltage", 12.8 },
 #endif
 
 #ifdef CONFIG_SHOW_TDOA_LARGE_AREA

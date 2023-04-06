@@ -7,10 +7,11 @@
 #include "controller_mellinger.h"
 #include "controller_indi.h"
 #include "controller_brescianini.h"
+#include "controller_geom.h"
 
 #include "autoconf.h"
 
-#define DEFAULT_CONTROLLER ControllerTypePID
+#define DEFAULT_CONTROLLER ControllerTypeGeom
 static ControllerType currentController = ControllerTypeAutoSelect;
 
 static void initController();
@@ -28,9 +29,7 @@ static ControllerFcns controllerFunctions[] = {
   {.init = controllerMellingerFirmwareInit, .test = controllerMellingerFirmwareTest, .update = controllerMellingerFirmware, .name = "Mellinger"},
   {.init = controllerINDIInit, .test = controllerINDITest, .update = controllerINDI, .name = "INDI"},
   {.init = controllerBrescianiniInit, .test = controllerBrescianiniTest, .update = controllerBrescianini, .name = "Brescianini"},
-  #ifdef CONFIG_CONTROLLER_OOT
-  {.init = controllerOutOfTreeInit, .test = controllerOutOfTreeTest, .update = controllerOutOfTree, .name = "OutOfTree"},
-  #endif
+  {.init = controllerGeomInit, .test = controllerGeomTest, .update = controllerGeom, .name = "Geometric"},
 };
 
 
@@ -53,6 +52,8 @@ void controllerInit(ControllerType controller) {
     #define CONTROLLER ControllerTypeMellinger
   #elif defined(CONFIG_CONTROLLER_BRESCIANINI)
     #define CONTROLLER ControllerTypeBrescianini
+  #elif defined(CONFIG_CONTROLLER_GEOM)
+    #define CONTROLLER ControllerTypeGeom
   #else
     #define CONTROLLER ControllerTypeAutoSelect
   #endif

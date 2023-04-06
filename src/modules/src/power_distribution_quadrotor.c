@@ -41,12 +41,18 @@
 #endif
 
 static uint32_t idleThrust = DEFAULT_IDLE_THRUST;
-static float armLength = 0.046f; // m;
-static float thrustToTorque = 0.005964552f;
+static float armLength = 0.125f; // m;
 
-// thrust = a * pwm^2 + b * pwm
-static float pwmToThrustA = 0.091492681f;
-static float pwmToThrustB = 0.067673604f;
+// ang_vel = a * pwm + b
+static float pwmToAngVelA = 0.065769f;
+static float pwmToAngVelB = -131.538;
+
+// thrust = c * signed_sum(ang_vel^2)
+static float angVelToThrust = 9.3945e-7f;
+
+// torque = a/c * signed_sum(thrust) + b/c
+static float thrustToTorqueA = 5.5939e-7f;
+static float thrustToTorqueB = -0.4785f;
 
 int powerDistributionMotorType(uint32_t id)
 {
@@ -94,12 +100,19 @@ static void powerDistributionForceTorque(const control_t *control, motors_thrust
   const float rollPart = 0.25f / arm * control->torqueX;
   const float pitchPart = 0.25f / arm * control->torqueY;
   const float thrustPart = 0.25f * control->thrustSi; // N (per rotor)
-  const float yawPart = 0.25f * control->torqueZ / thrustToTorque;
+  int yaw_sgn = (control->torqueZ > 0) - (control->torqueZ < 0);
+  const float yawPart = 0.25f * (control->torqueZ - yaw_sgn * thrustToTorqueB) * angVelToThrust / thrustToTorqueA;
 
   motorForces[0] = thrustPart - rollPart - pitchPart - yawPart;
   motorForces[1] = thrustPart - rollPart + pitchPart + yawPart;
   motorForces[2] = thrustPart + rollPart + pitchPart - yawPart;
   motorForces[3] = thrustPart + rollPart - pitchPart + yawPart;
+
+  // thrust = a * PWM^2 + b * PWM + c
+  // maybe we shut put this computation somewhere else later
+  const float pwmToThrustA = angVelToThrust * pwmToAngVelA * pwmToAngVelA * UINT16_MAX * UINT16_MAX;
+  const float pwmToThrustB = 2 * angVelToThrust * pwmToAngVelA * pwmToAngVelB * UINT16_MAX;
+  const float pwmToThrustC = angVelToThrust * pwmToAngVelB * pwmToAngVelB;
 
   for (int motorIndex = 0; motorIndex < STABILIZER_NR_OF_MOTORS; motorIndex++) {
     float motorForce = motorForces[motorIndex];
@@ -107,7 +120,8 @@ static void powerDistributionForceTorque(const control_t *control, motors_thrust
       motorForce = 0.0f;
     }
 
-    float motor_pwm = (-pwmToThrustB + sqrtf(pwmToThrustB * pwmToThrustB + 4.0f * pwmToThrustA * motorForce)) / (2.0f * pwmToThrustA);
+    // calculate motor pwm in the range of [0, 1]
+    float motor_pwm = (-pwmToThrustB + sqrtf(pwmToThrustB * pwmToThrustB - 4.0f * pwmToThrustA * (pwmToThrustC - motorForce))) / (2.0f * pwmToThrustA);
     motorThrustUncapped->list[motorIndex] = motor_pwm * UINT16_MAX;
   }
 }
@@ -136,7 +150,8 @@ void powerDistribution(const control_t *control, motors_thrust_uncapped_t* motor
 
 void powerDistributionCap(const motors_thrust_uncapped_t* motorThrustBatCompUncapped, motors_thrust_pwm_t* motorPwm)
 {
-  const int32_t maxAllowedThrust = UINT16_MAX;
+  // const int32_t maxAllowedThrust = UINT16_MAX;
+  const int32_t maxAllowedThrust = 40000;
 
   // Find highest thrust
   int32_t highestThrustFound = 0;
@@ -181,9 +196,9 @@ PARAM_GROUP_STOP(powerDist)
  */
 PARAM_GROUP_START(quadSysId)
 
-PARAM_ADD(PARAM_FLOAT, thrustToTorque, &thrustToTorque)
+/*PARAM_ADD(PARAM_FLOAT, thrustToTorque, &thrustToTorque)
 PARAM_ADD(PARAM_FLOAT, pwmToThrustA, &pwmToThrustA)
-PARAM_ADD(PARAM_FLOAT, pwmToThrustB, &pwmToThrustB)
+PARAM_ADD(PARAM_FLOAT, pwmToThrustB, &pwmToThrustB)*/
 
 /**
  * @brief Length of arms (m)

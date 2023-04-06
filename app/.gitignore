@@ -1,6 +1,7 @@
 build/
 dist/
 .vscode/
+vendor/
 app-config
 cf2.*
 cf2-skybrush-*.*

@@ -307,8 +307,9 @@ static void stabilizerTask(void* param)
         motorsStop();
       } else {
         powerDistribution(&control, &motorThrustUncapped);
-        batteryCompensation(&motorThrustUncapped, &motorThrustBatCompUncapped);
-        powerDistributionCap(&motorThrustBatCompUncapped, &motorPwm);
+        batteryCompensation(&motorThrustUncapped, &motorThrustBatCompUncapped);  // Battery compensation has no effect here
+        // powerDistributionCap(&motorThrustBatCompUncapped, &motorPwm);
+        powerDistributionCap(&motorThrustUncapped, &motorPwm);
         setMotorRatios(&motorPwm);
       }
 
@@ -438,9 +439,14 @@ LOG_ADD_CORE(LOG_FLOAT, roll, &setpoint.attitude.roll)
 LOG_ADD_CORE(LOG_FLOAT, pitch, &setpoint.attitude.pitch)
 
 /**
+ * @brief Desired attitude, yaw [deg]
+ */
+LOG_ADD_CORE(LOG_FLOAT, yaw, &setpoint.attitude.yaw)
+
+/**
  * @brief Desired attitude rate, yaw rate [deg/s]
  */
-LOG_ADD_CORE(LOG_FLOAT, yaw, &setpoint.attitudeRate.yaw)
+LOG_ADD_CORE(LOG_FLOAT, yawRate, &setpoint.attitudeRate.yaw)
 LOG_GROUP_STOP(ctrltarget)
 
 /**
@@ -504,6 +510,12 @@ LOG_GROUP_STOP(ctrltargetZ)
  * for the stabilizer module
  */
 LOG_GROUP_START(stabilizer)
+
+LOG_ADD(LOG_UINT16, m1, &motorPwm.motors.m1)
+LOG_ADD(LOG_UINT16, m2, &motorPwm.motors.m2)
+LOG_ADD(LOG_UINT16, m3, &motorPwm.motors.m3)
+LOG_ADD(LOG_UINT16, m4, &motorPwm.motors.m4)
+
 /**
  * @brief Estimated roll
  *   Note: Same as stateEstimate.roll
