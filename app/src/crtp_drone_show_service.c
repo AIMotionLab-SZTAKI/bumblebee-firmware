@@ -42,10 +42,16 @@
 #include "supervisor.h"
 #include "system.h"
 
+#include "stabilizer_types.h"
+#include "quatcompress.h"
+#include "crtp_localization_service.h"
+#include "controller_lqr_1dof.h"
+
 #define DEBUG_MODULE "SHOW"
 #include "debug.h"
 
 #define CONTROL_CH 0
+#define LOAD_POSE_CH 1
 
 #define CMD_START  0
 #define CMD_PAUSE  1
@@ -56,6 +62,7 @@
 #define CMD_TRIGGER_GCS_LIGHT_EFFECT 6
 #define CMD_ARM_OR_DISARM 7
 #define CMD_DEFINE_FENCE 8
+
 
 struct data_arm_or_disarm {
   uint8_t arm;  /* 0 = disarm, 1 = arm, 2 = force-disarm, 3 = force-arm (not used yet) */
@@ -75,7 +82,19 @@ struct data_trigger_light_effect {
   uint8_t color[3];
 } __attribute__((packed));
 
+struct data_load_pose {
+  uint8_t id; // last 8 bit of the Crazyflie address
+  int16_t x; // mm
+  int16_t y; // mm
+  int16_t z; // mm
+  uint32_t quat; // compressed quaternion, see quatcompress.h
+} __attribute__((packed));  // similar to extPosePackedItem in crtp_localization_service
+
+
 static bool isInit = false;
+static poseMeasurement_t load_pose;
+static uint8_t payload_id = 12;
+static uint32_t now_ms;
 
 static struct {
   logVarId_t stateEstimateYaw;
@@ -90,6 +109,8 @@ static void handleDefineFencePacket(CRTPPacket* pk);
 static void handleDefineLightProgramPacket(CRTPPacket* pk);
 static void handleTriggerGcsLightEffectPacket(CRTPPacket* pk);
 static void updatePacketWithStatusInformation(CRTPPacket* pk);
+static void droneShowSrvLoadPosePacket(CRTPPacket* pk);
+static void handleLoadPosePacket(CRTPPacket* pk);
 
 void droneShowSrvInit() {
   if (isInit) {
@@ -172,11 +193,51 @@ static void droneShowSrvProcessControlPacket(CRTPPacket* pk) {
   crtpSendPacket(pk);
 }
 
+static void droneShowSrvLoadPosePacket(CRTPPacket* pk) {
+  if (pk->size < 1) {
+    return;
+  }
+
+  /* commands are acknowledged by sending the same packet back.
+   * status requests are responded to in the same packet */
+
+  switch (pk->data[0]) {
+    case EXT_POSE_PACKED:
+      handleLoadPosePacket(pk);
+    default:
+      return;
+  }
+
+  crtpSendPacket(pk);
+}
+
 static void droneShowSrvCrtpCB(CRTPPacket* pk) {
-  if (pk->channel == CONTROL_CH) {
-    droneShowSrvProcessControlPacket(pk);
+  switch (pk->channel) {
+    case CONTROL_CH:
+      droneShowSrvProcessControlPacket(pk);
+    case LOAD_POSE_CH:
+      droneShowSrvLoadPosePacket(pk);
   }
 }
+
+static void handleLoadPosePacket(CRTPPacket* pk) {
+  // similar to extPosePackedHandler in crtp_localization_service
+  struct data_load_pose data = *((struct data_load_pose*)(pk->data + 1));
+  
+  if (data.id == payload_id) {
+    load_pose.x = data.x / 1000.0f;
+    load_pose.y = data.y / 1000.0f;
+    load_pose.z = data.z / 1000.0f;
+    quatdecompress(data.quat, (float *)&load_pose.quat.q0);
+    // load_pose.stdDevPos = 1;  // not needed yet
+    // load_pose.stdDevQuat = 1;
+    // estimatorEnqueuePose(&ext_pose);
+    uint32_t now_ms_new = T2M(xTaskGetTickCount());
+    setLoadState(&load_pose, now_ms_new - now_ms);
+    now_ms = now_ms_new;
+  }
+}
+
 
 static void handleArmOrDisarmCommandPacket(CRTPPacket* pk) {
   struct data_arm_or_disarm data = *((struct data_arm_or_disarm*)(pk->data + 1));
@@ -316,3 +377,17 @@ static void updatePacketWithStatusInformation(CRTPPacket* pk) {
   );
   *((uint16_t*)(pk->data + 14)) = colorAsRGB565;
 }
+
+PARAM_GROUP_START(show_crtp)
+PARAM_ADD(PARAM_UINT8, payload_id, &payload_id)
+PARAM_GROUP_STOP(show_crtp)
+
+LOG_GROUP_START(load_pose)
+LOG_ADD_CORE(LOG_FLOAT, x, &load_pose.x)
+LOG_ADD_CORE(LOG_FLOAT, y, &load_pose.y)
+LOG_ADD_CORE(LOG_FLOAT, z, &load_pose.z)
+LOG_ADD_CORE(LOG_FLOAT, qx, &load_pose.quat.x)
+LOG_ADD_CORE(LOG_FLOAT, qy, &load_pose.quat.y)
+LOG_ADD_CORE(LOG_FLOAT, qz, &load_pose.quat.z)
+LOG_ADD_CORE(LOG_FLOAT, qw, &load_pose.quat.w)
+LOG_GROUP_STOP(load_pose)

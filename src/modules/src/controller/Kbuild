@@ -1,6 +1,7 @@
 obj-y += attitude_pid_controller.o
 obj-y += controller_indi.o
 obj-y += controller_geom.o
+obj-y += controller_lqr_1dof.o
 obj-y += controller_mellinger.o
 obj-y += controller.o
 obj-y += controller_pid.o
