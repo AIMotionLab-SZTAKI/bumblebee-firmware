@@ -189,8 +189,7 @@ void controllerGeom(control_t *control, const setpoint_t *setpoint,
   r1 = vcross(r2, r3);
   Rd = mcolumns(r1, r2, r3);
 
-  //Desired attitude [rad], pitch direction negative due to quirky and random crazyflie coordinate system
-  wd = mkvec(radians(setpoint->attitudeRate.roll), -radians(setpoint->attitudeRate.pitch), radians(setpoint->attitudeRate.yaw));
+  wd = mkvec(radians(setpoint->attitudeRate.roll), radians(setpoint->attitudeRate.pitch), radians(setpoint->attitudeRate.yaw));
   
   //State estimate quaterion and the rotational matrix resulting from it
   q = mkquat(state->attitudeQuaternion.x, state->attitudeQuaternion.y, state->attitudeQuaternion.z, state->attitudeQuaternion.w);
@@ -221,11 +220,10 @@ void controllerGeom(control_t *control, const setpoint_t *setpoint,
   //Attitude tracking error
   struct mat33 eRm = msub(eR1,eR2);
   eR.x = 0.5f*eRm.m[2][1];
-  eR.y = -0.5f*eRm.m[0][2]; //THIS NEGATIVE SIGN IS NOT HERE BECAUSE OF THE CF COORDINATE SYSTEM - NOT INFLUENCED BY FLIPPING PITCH
+  eR.y = 0.5f*eRm.m[0][2];
   eR.z = 0.5f*eRm.m[1][0];
 
-  //Desired and state attitude rate [rad/sec], pitch direction negative due to quirky and random crazyflie coordinate system
-  struct vec w = mkvec(radians(sensors->gyro.x), -radians(sensors->gyro.y), radians(sensors->gyro.z));
+  struct vec w = mkvec(radians(sensors->gyro.x), radians(sensors->gyro.y), radians(sensors->gyro.z));
 
   struct vec w_target = mvmul(eR2,wd);
 
@@ -268,12 +266,12 @@ void controllerGeom(control_t *control, const setpoint_t *setpoint,
   //Log variables
   cmd_thrust_N = control->thrustSi;
   r_roll = radians(sensors->gyro.x);
-  r_pitch = -radians(sensors->gyro.y);
+  r_pitch = radians(sensors->gyro.y);
   r_yaw = radians(sensors->gyro.z);
 
   if (control->thrustSi > 0) {
     control->torqueX = M.x;
-    control->torqueY = -M.y;
+    control->torqueY = M.y;
     control->torqueZ = M.z;
 
   } else {
