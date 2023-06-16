@@ -53,6 +53,8 @@
 
 #include "num.h"
 
+#include "debug.h"
+
 
 #define NBR_OF_RANGES_IN_PACKET   5
 #define NBR_OF_SWEEPS_IN_PACKET   2

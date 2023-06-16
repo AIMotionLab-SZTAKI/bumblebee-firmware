@@ -83,7 +83,7 @@ struct data_trigger_light_effect {
 } __attribute__((packed));
 
 struct data_load_pose {
-  uint8_t id; // last 8 bit of the Crazyflie address
+  uint8_t id; // 
   int16_t x; // mm
   int16_t y; // mm
   int16_t z; // mm
@@ -94,7 +94,9 @@ struct data_load_pose {
 static bool isInit = false;
 static poseMeasurement_t load_pose;
 static uint8_t payload_id = 12;
+static uint8_t cur_id = 0;
 static uint32_t now_ms;
+static uint32_t load_pose_ctr;
 
 static struct {
   logVarId_t stateEstimateYaw;
@@ -200,31 +202,27 @@ static void droneShowSrvLoadPosePacket(CRTPPacket* pk) {
 
   /* commands are acknowledged by sending the same packet back.
    * status requests are responded to in the same packet */
-
-  switch (pk->data[0]) {
-    case EXT_POSE_PACKED:
-      handleLoadPosePacket(pk);
-    default:
-      return;
+  if (pk->data[0] == EXT_POSE_PACKED){
+    handleLoadPosePacket(pk);
   }
 
   crtpSendPacket(pk);
 }
 
 static void droneShowSrvCrtpCB(CRTPPacket* pk) {
-  switch (pk->channel) {
-    case CONTROL_CH:
-      droneShowSrvProcessControlPacket(pk);
-    case LOAD_POSE_CH:
-      droneShowSrvLoadPosePacket(pk);
+  if (pk->channel == CONTROL_CH) {
+    droneShowSrvProcessControlPacket(pk);
+  } else if (pk->channel == LOAD_POSE_CH) {
+    droneShowSrvLoadPosePacket(pk);
   }
 }
 
 static void handleLoadPosePacket(CRTPPacket* pk) {
   // similar to extPosePackedHandler in crtp_localization_service
   struct data_load_pose data = *((struct data_load_pose*)(pk->data + 1));
-  
-  if (data.id == payload_id) {
+  uint32_t now_ms_new = T2M(xTaskGetTickCount());
+  if ((data.id == payload_id + cur_id) && (now_ms_new - now_ms > 8)) {
+    load_pose_ctr++;
     load_pose.x = data.x / 1000.0f;
     load_pose.y = data.y / 1000.0f;
     load_pose.z = data.z / 1000.0f;
@@ -232,9 +230,9 @@ static void handleLoadPosePacket(CRTPPacket* pk) {
     // load_pose.stdDevPos = 1;  // not needed yet
     // load_pose.stdDevQuat = 1;
     // estimatorEnqueuePose(&ext_pose);
-    uint32_t now_ms_new = T2M(xTaskGetTickCount());
-    setLoadState(&load_pose, now_ms_new - now_ms);
+    setLoadState(&load_pose, now_ms_new-now_ms);
     now_ms = now_ms_new;
+    cur_id = 1 - cur_id;
   }
 }
 
@@ -383,11 +381,12 @@ PARAM_ADD(PARAM_UINT8, payload_id, &payload_id)
 PARAM_GROUP_STOP(show_crtp)
 
 LOG_GROUP_START(load_pose)
-LOG_ADD_CORE(LOG_FLOAT, x, &load_pose.x)
-LOG_ADD_CORE(LOG_FLOAT, y, &load_pose.y)
-LOG_ADD_CORE(LOG_FLOAT, z, &load_pose.z)
-LOG_ADD_CORE(LOG_FLOAT, qx, &load_pose.quat.x)
-LOG_ADD_CORE(LOG_FLOAT, qy, &load_pose.quat.y)
-LOG_ADD_CORE(LOG_FLOAT, qz, &load_pose.quat.z)
-LOG_ADD_CORE(LOG_FLOAT, qw, &load_pose.quat.w)
+LOG_ADD(LOG_FLOAT, x, &load_pose.x)
+LOG_ADD(LOG_FLOAT, y, &load_pose.y)
+LOG_ADD(LOG_FLOAT, z, &load_pose.z)
+LOG_ADD(LOG_FLOAT, qx, &load_pose.quat.x)
+LOG_ADD(LOG_FLOAT, qy, &load_pose.quat.y)
+LOG_ADD(LOG_FLOAT, qz, &load_pose.quat.z)
+LOG_ADD(LOG_FLOAT, qw, &load_pose.quat.w)
+LOG_ADD(LOG_UINT32, counter, &load_pose_ctr)
 LOG_GROUP_STOP(load_pose)

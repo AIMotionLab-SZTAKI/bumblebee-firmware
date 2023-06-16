@@ -21,8 +21,8 @@ static float dt = (float)(1.0f/ATTITUDE_RATE);
 // Bumblebee
 static float kr = 4;
 static float kv = 2;
-static float kR = 1.7;
-static float kw = 0.2;
+static float kR = 0.6;
+static float kw = 0.15;
 
 
 

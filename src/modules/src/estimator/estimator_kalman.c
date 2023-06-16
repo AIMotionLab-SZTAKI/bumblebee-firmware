@@ -238,7 +238,10 @@ static void kalmanTask(void* parameters) {
       STATS_CNT_RATE_EVENT(&predictionCounter);
 
       if (!rateSupervisorValidate(&rateSupervisorContext, nowMs)) {
-        DEBUG_PRINT("WARNING: Kalman prediction rate low (%lu)\n", rateSupervisorLatestCount(&rateSupervisorContext));
+        uint32_t kalman_rate = rateSupervisorLatestCount(&rateSupervisorContext);
+        if (kalman_rate <= 89) {
+          DEBUG_PRINT("WARNING: Kalman prediction rate low (%lu)\n", kalman_rate);
+        }        
       }
     }
 
