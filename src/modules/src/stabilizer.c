@@ -58,6 +58,7 @@
 #include "rateSupervisor.h"
 
 #include "controller_lqr_1dof.h"
+#include "controller_lqr_2dof.h"
 
 static bool isInit;
 static bool emergencyStop = false;
@@ -296,7 +297,7 @@ static void stabilizerTask(void* param)
       collisionAvoidanceUpdateSetpoint(&setpoint, &sensorData, &state, tick);
 
       controller(&control, &setpoint, &sensorData, &state, tick);
-      controllerLqr1Dof(&control, &setpoint, &sensorData, &state, tick);
+      controllerLqr2Dof(&control, &setpoint, &sensorData, &state, tick);
 
       checkEmergencyStopTimeout();
 

@@ -13,5 +13,5 @@ void controllerLqr1Dof(control_t *control, const setpoint_t *setpoint,
                                          const sensorData_t *sensors,
                                          const state_t *state,
                                          const uint32_t tick);
-void setLoadState(const poseMeasurement_t *measurement, const uint32_t dt_ms);
+void setLoadState1Dof(const poseMeasurement_t *measurement, const uint32_t dt_ms);
 #endif //__CONTROLLER_LQR_1DOF_H__

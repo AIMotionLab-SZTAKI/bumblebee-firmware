@@ -9,6 +9,7 @@
 #include "controller_brescianini.h"
 #include "controller_geom.h"
 #include "controller_lqr_1dof.h"
+#include "controller_lqr_2dof.h"
 
 #include "autoconf.h"
 
@@ -32,6 +33,7 @@ static ControllerFcns controllerFunctions[] = {
   {.init = controllerBrescianiniInit, .test = controllerBrescianiniTest, .update = controllerBrescianini, .name = "Brescianini"},
   {.init = controllerGeomInit, .test = controllerGeomTest, .update = controllerGeom, .name = "Geometric"},
   {.init = controllerLqr1DofInit, .test = controllerLqr1DofTest, .update = controllerLqr1Dof, .name = "LQR-1Dof"},
+  {.init = controllerLqr2DofInit, .test = controllerLqr2DofTest, .update = controllerLqr2Dof, .name = "LQR-2Dof"},
 };
 
 
@@ -58,6 +60,8 @@ void controllerInit(ControllerType controller) {
     #define CONTROLLER ControllerTypeGeom
   #elif defined(CONFIG_CONTROLLER_LQR1DOF)
     #define CONTROLLER ControllerTypeLqr1Dof
+  #elif defined(CONFIG_CONTROLLER_LQR2DOF)
+    #define CONTROLLER ControllerTypeLqr2Dof
   #else
     #define CONTROLLER ControllerTypeAutoSelect
   #endif

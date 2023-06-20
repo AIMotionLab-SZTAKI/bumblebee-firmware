@@ -239,7 +239,7 @@ static void kalmanTask(void* parameters) {
 
       if (!rateSupervisorValidate(&rateSupervisorContext, nowMs)) {
         uint32_t kalman_rate = rateSupervisorLatestCount(&rateSupervisorContext);
-        if (kalman_rate <= 89) {
+        if (kalman_rate <= 85) {
           DEBUG_PRINT("WARNING: Kalman prediction rate low (%lu)\n", kalman_rate);
         }        
       }

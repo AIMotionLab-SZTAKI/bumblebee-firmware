@@ -46,6 +46,7 @@
 #include "quatcompress.h"
 #include "crtp_localization_service.h"
 #include "controller_lqr_1dof.h"
+#include "controller_lqr_2dof.h"
 
 #define DEBUG_MODULE "SHOW"
 #include "debug.h"
@@ -82,7 +83,7 @@ struct data_trigger_light_effect {
   uint8_t color[3];
 } __attribute__((packed));
 
-struct data_load_pose {
+struct data_load_pose_packed {
   uint8_t id; // 
   int16_t x; // mm
   int16_t y; // mm
@@ -90,6 +91,15 @@ struct data_load_pose {
   uint32_t quat; // compressed quaternion, see quatcompress.h
 } __attribute__((packed));  // similar to extPosePackedItem in crtp_localization_service
 
+struct data_load_pose {
+  float x; // in m
+  float y; // in m
+  float z; // in m
+  float qx;
+  float qy;
+  float qz;
+  float qw;
+} __attribute__((packed));  // similar to CrtpExtPose in crtp_localization_service
 
 static bool isInit = false;
 static poseMeasurement_t load_pose;
@@ -112,6 +122,7 @@ static void handleDefineLightProgramPacket(CRTPPacket* pk);
 static void handleTriggerGcsLightEffectPacket(CRTPPacket* pk);
 static void updatePacketWithStatusInformation(CRTPPacket* pk);
 static void droneShowSrvLoadPosePacket(CRTPPacket* pk);
+static void handleLoadPosePackedPacket(CRTPPacket* pk);
 static void handleLoadPosePacket(CRTPPacket* pk);
 
 void droneShowSrvInit() {
@@ -203,6 +214,9 @@ static void droneShowSrvLoadPosePacket(CRTPPacket* pk) {
   /* commands are acknowledged by sending the same packet back.
    * status requests are responded to in the same packet */
   if (pk->data[0] == EXT_POSE_PACKED){
+    handleLoadPosePackedPacket(pk);
+  }
+  else if (pk->data[0] == EXT_POSE){
     handleLoadPosePacket(pk);
   }
 
@@ -217,11 +231,11 @@ static void droneShowSrvCrtpCB(CRTPPacket* pk) {
   }
 }
 
-static void handleLoadPosePacket(CRTPPacket* pk) {
+static void handleLoadPosePackedPacket(CRTPPacket* pk) {
   // similar to extPosePackedHandler in crtp_localization_service
-  struct data_load_pose data = *((struct data_load_pose*)(pk->data + 1));
+  struct data_load_pose_packed data = *((struct data_load_pose_packed*)(pk->data + 1));
   uint32_t now_ms_new = T2M(xTaskGetTickCount());
-  if ((data.id == payload_id + cur_id) && (now_ms_new - now_ms > 8)) {
+  if ((data.id == payload_id + cur_id) && (now_ms_new - now_ms > 16)) {
     load_pose_ctr++;
     load_pose.x = data.x / 1000.0f;
     load_pose.y = data.y / 1000.0f;
@@ -230,9 +244,31 @@ static void handleLoadPosePacket(CRTPPacket* pk) {
     // load_pose.stdDevPos = 1;  // not needed yet
     // load_pose.stdDevQuat = 1;
     // estimatorEnqueuePose(&ext_pose);
-    setLoadState(&load_pose, now_ms_new-now_ms);
+    // setLoadState1Dof(&load_pose, now_ms_new-now_ms);
+    setLoadState2Dof(&load_pose, now_ms_new-now_ms);
     now_ms = now_ms_new;
     cur_id = 1 - cur_id;
+  }
+}
+
+
+static void handleLoadPosePacket(CRTPPacket* pk) {
+  struct data_load_pose data = *((struct data_load_pose*)(pk->data +1));
+  uint32_t now_ms_new = T2M(xTaskGetTickCount());
+  if (now_ms_new - now_ms > 16) {
+    load_pose_ctr++;
+    load_pose.x = data.x;
+    load_pose.y = data.y;
+    load_pose.z = data.z;
+    load_pose.quat.q0 = data.qx;
+    load_pose.quat.q1 = data.qy;
+    load_pose.quat.q2 = data.qz;
+    load_pose.quat.q3 = data.qw;
+    // load_pose.stdDevPos = extPosStdDev;
+    // load_pose.stdDevQuat = extQuatStdDev;
+    // setLoadState1Dof(&load_pose, now_ms_new-now_ms);
+    setLoadState2Dof(&load_pose, now_ms_new-now_ms);
+    now_ms = now_ms_new;
   }
 }
 
