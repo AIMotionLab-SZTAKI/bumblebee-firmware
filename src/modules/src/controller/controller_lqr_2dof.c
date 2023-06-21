@@ -32,7 +32,7 @@ static uint8_t ctrlMode;
 static struct quat q;
 
 static float drone_mass = 0.605;
-static float payload_mass = 0.0736;
+static float payload_mass = 0.05;
 
 static float real_mass = 0.605;
 
@@ -68,8 +68,6 @@ static poseMeasurement_t load_pose;
 static struct vec load_vel;
 static struct vec load_rpy;
 static struct vec load_ang_vel;
-
-static uint8_t enable = false;
 
 static float average_weight_pos = 0.5;
 static float average_weight_att = 0.4;
@@ -202,35 +200,16 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
     real_mass = drone_mass;
   }
 
-
-  if(enable){
-    control->thrustSi = cmd_thrust_N;
-    if(control->thrustSi > 0){
-      control->torqueX = cmd_roll;
-      control->torqueY = cmd_pitch;
-      control->torqueZ = cmd_yaw;
-    } else {
-      control->torqueX = 0;
-      control->torqueY = 0;
-      control->torqueZ = 0;
-    }
-  }
-
-  /*if (control->thrustSi > 0) {
-    control->torqueX = M.x;
-    control->torqueY = -M.y;
-    control->torqueZ = M.z;
-
+  control->thrustSi = cmd_thrust_N;
+  if(control->thrustSi > 0){
+    control->torqueX = cmd_roll;
+    control->torqueY = cmd_pitch;
+    control->torqueZ = cmd_yaw;
   } else {
     control->torqueX = 0;
     control->torqueY = 0;
     control->torqueZ = 0;
   }
-  //Log variables
-  cmd_roll = control->torqueX;
-  cmd_pitch = control->torqueY;
-  cmd_yaw = control -> torqueZ;  
-  */
 }
 
 
@@ -249,7 +228,6 @@ PARAM_ADD(PARAM_FLOAT, batt_comp_a, &batt_comp_a)
 PARAM_ADD(PARAM_FLOAT, batt_comp_b, &batt_comp_b)
 PARAM_ADD(PARAM_FLOAT, w_pos, &average_weight_pos)
 PARAM_ADD(PARAM_FLOAT, w_att, &average_weight_att)
-PARAM_ADD(PARAM_UINT8, enable, &enable)
 PARAM_GROUP_STOP(Lqr2)
 
 
