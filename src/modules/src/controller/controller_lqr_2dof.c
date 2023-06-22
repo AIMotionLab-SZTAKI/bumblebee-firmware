@@ -61,7 +61,6 @@ static float K412 = 0.1358;
 
 static float dt;
 static float ex, ey, ez, evx, evy, evz, alpha, dalpha, beta, dbeta;
-// static float alpha2, dalpha2, beta2, dbeta2;
 
 static poseMeasurement_t load_pose;
 
@@ -71,9 +70,6 @@ static struct vec load_ang_vel;
 
 static float average_weight_pos = 0.5;
 static float average_weight_att = 0.4;
-
-//static float L1 = 0.1; // distance from drone markers to hook joint
-//static float L2 = 0.365; // distance from hook joint to hook markers
 
 static const state_t* cur_state;
 
@@ -96,12 +92,6 @@ void setLoadState2Dof(const poseMeasurement_t *measurement, uint32_t dt_ms)
   load_pose.y = measurement->y;
   load_pose.z = measurement->z;
   load_rpy = load_rpy_new;
-  //float alpha2_prev = alpha2;
-  //float beta2_prev = beta2;
-  //alpha2 = -asinf((cur_state->position.y - load_pose.y + L1*sinf(radians(cur_state->attitude.roll)))/L2);
-  //beta2 = -asinf((load_pose.x - cur_state->position.x + L1*cosf(radians(cur_state->attitude.roll))*sinf(-radians(cur_state->attitude.pitch)))/(L2*cosf(alpha2)));
-  //dalpha2 = (1 - average_weight_pos) * dalpha2 + average_weight_pos * (alpha2 - alpha2_prev) / dt;
-  //dbeta2 = (1 - average_weight_pos) * dbeta2 + average_weight_pos * (beta2 - beta2_prev) / dt;
 }
 
 void controllerLqr2DofReset(void)
@@ -154,40 +144,47 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
   setPointMode_pitch = setpoint->mode.pitch;
   setPointMode_yaw = setpoint->mode.yaw;
   setPointMode_quat = setpoint->mode.quat;
-
  
   //Position in m, velocity in m/s
   struct vec setpointPos = mkvec(setpoint->position.x, setpoint->position.y, setpoint->position.z);
   struct vec setpointVel = mkvec(setpoint->velocity.x, setpoint->velocity.y, setpoint->velocity.z);
-  /*struct vec setpointPos = mkvec(x, y, z);
-  struct vec setpointVel = vzero();*/
 
-  // Compute error vector: payload position, swing angle
+  // Angle setpoints are not calculated in pptraj.c
+  struct vec zB = vnormalize(mkvec(setpoint->acceleration.x, setpoint->acceleration.y, setpoint->acceleration.z + GRAVITY_MAGNITUDE));
+  struct vec xC = mkvec(cosf(radians(setpoint->yaw)), sinf(radians(setpoint->yaw)), 0);
+  struct vec yB = vnormalize(vcross(zB, xC));
+  struct vec xB = vcross(yB, zB);
+  struct mat33 Rd = mcolumns(xB, yB, zB);
+  struct vec setpoint_rpy = quat2rpy(mat2quat(Rd));
+
+  // Compute error vector: drone position, swing angle
   ex = state->position.x - setpointPos.x;
   ey = state->position.y - setpointPos.y;
   ez = state->position.z - setpointPos.z;
+
   evx = state->velocity.x - setpointVel.x;
   evy = state->velocity.y - setpointVel.y;
   evz = state->velocity.z - setpointVel.z;
-  // alpha = load_pitch - quad_pitch
+
   alpha = load_rpy.x;
   dalpha = load_ang_vel.x;
   beta = load_rpy.y;
   dbeta = load_ang_vel.y;
 
-  
+  float eroll = radians(state->attitude.roll) - setpoint_rpy.x;
+  float epitch = -radians(state->attitude.pitch) - setpoint_rpy.y;
+  float eyaw = radians(state->attitude.yaw) - setpoint_rpy.z;
 
-  //alpha2 = -asinf((state->position.y - load_pose.y + L1*sinf(radians(state->attitude.roll)))/L2);
-  //dalpha2 = -(state->velocity.y - load_vel.y + L1*cosf(radians(state->attitude.roll))*sensors->gyro.x)/(L2*sqrtf(1.0f - (powf(state->velocity.y - load_vel.y + L1*sinf(radians(state->attitude.roll)), 2))/L2/L2));
-  //beta2 = -asinf((load_pose.x - state->position.x + L1*cosf(radians(state->attitude.roll))*sinf(-radians(state->attitude.pitch)))/(L2*cosf(alpha2)));
-  //dbeta2 = ((state->velocity.x - load_vel.x + L1*sinf(radians(state->attitude.roll))*sinf(-radians(state->attitude.pitch))*sensors->gyro.y - L1*cosf(radians(state->attitude.roll))*cosf(-radians(state->attitude.pitch))*sensors->gyro.y)/(L2*cosf(alpha2)) - 
-  //(sinf(alpha2)*dalpha2*(load_pose.x - state->position.x + L1*cosf(radians(state->attitude.roll))*sinf(-radians(state->attitude.pitch))))/(L2*cosf(alpha2)*cosf(alpha)))/sqrtf(1.0f - powf(load_pose.x - state->position.x + L1*cosf(radians(state->attitude.roll))*sinf(-radians(state->attitude.pitch)), 2)/(L2*L2*cosf(alpha2)*cosf(alpha2)));
+  // Angular velocity setpoints are calculated in pptraj.c
+  float ewx = radians(sensors->gyro.x) - setpoint->attitudeRate.x;
+  float ewy = radians(sensors->gyro.y) - setpoint->attitudeRate.y;
+  float ewz = radians(sensors->gyro.z) - setpoint->attitudeRate.z;
 
   // Compute control inputs: u = -K * (x - x_r) + u_r
   cmd_thrust_N = -K13 * ez - K16 * evz + vehicleWeight_N; 
-  cmd_roll = -K22 * ey - K25 * evy - K27 * radians(state->attitude.roll) - K210 * radians(sensors->gyro.x) - K213 * alpha - K215 * dalpha;
-  cmd_pitch = -K31 * ex - K34 * evx - K38 * (-radians(state->attitude.pitch)) - K311 * (radians(sensors->gyro.y)) - K314 * beta - K316 * dbeta;
-  cmd_yaw = -K49 * radians(state->attitude.yaw) - K412 * radians(sensors->gyro.z);
+  cmd_roll = -K22 * ey - K25 * evy - K27 * eroll - K210 * ewx - K213 * alpha - K215 * dalpha;
+  cmd_pitch = -K31 * ex - K34 * evx - K38 * epitch - K311 * ewy - K314 * beta - K316 * dbeta;
+  cmd_yaw = -K49 * eyaw - K412 * ewz;
   // TODO: thrust = cmd_thrust_N, M.y = cmd_pitch
 
 
@@ -214,14 +211,6 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
 
 
 PARAM_GROUP_START(Lqr2)
-/*PARAM_ADD(PARAM_FLOAT, K13, &K13)
-PARAM_ADD(PARAM_FLOAT, K16, &K14)
-PARAM_ADD(PARAM_FLOAT, K22, &K21)
-PARAM_ADD(PARAM_FLOAT, K25, &K22)
-PARAM_ADD(PARAM_FLOAT, K27, &K25)
-PARAM_ADD(PARAM_FLOAT, K210, &K26)
-PARAM_ADD(PARAM_FLOAT, K213, &K27)
-PARAM_ADD(PARAM_FLOAT, K28, &K28)*/
 PARAM_ADD(PARAM_FLOAT, drone_mass, &drone_mass)
 PARAM_ADD(PARAM_FLOAT, payload_mass, &payload_mass)
 PARAM_ADD(PARAM_FLOAT, batt_comp_a, &batt_comp_a)
@@ -245,10 +234,6 @@ LOG_ADD(LOG_FLOAT, alpha, &alpha)
 LOG_ADD(LOG_FLOAT, dalpha, &dalpha)
 LOG_ADD(LOG_FLOAT, beta, &beta)
 LOG_ADD(LOG_FLOAT, dbeta, &dbeta)
-//LOG_ADD(LOG_FLOAT, beta2, &beta2)
-//LOG_ADD(LOG_FLOAT, dbeta2, &dbeta2)
-//LOG_ADD(LOG_FLOAT, alpha2, &alpha2)
-//LOG_ADD(LOG_FLOAT, dalpha2, &dalpha2)
 LOG_ADD(LOG_FLOAT, dt, &dt)
 LOG_ADD(LOG_UINT8, x_Mode, &setPointMode_x)
 LOG_ADD(LOG_UINT8, y_Mode, &setPointMode_y)
