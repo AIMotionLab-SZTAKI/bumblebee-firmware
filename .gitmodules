@@ -15,4 +15,4 @@
 	url = https://github.com/throwtheswitch/unity.git
 [submodule "app/vendor/libskybrush"]
 	path = app/vendor/libskybrush
-	url = https://github.com/skybrush-io/libskybrush.git
+	url = https://github.com/skybrush-io/libskybrush
