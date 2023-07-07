@@ -151,7 +151,7 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
 
   // Angle setpoints are not calculated in pptraj.c
   struct vec zB = vnormalize(mkvec(setpoint->acceleration.x, setpoint->acceleration.y, setpoint->acceleration.z + GRAVITY_MAGNITUDE));
-  struct vec xC = mkvec(cosf(radians(setpoint->yaw)), sinf(radians(setpoint->yaw)), 0);
+  struct vec xC = mkvec(cosf(radians(setpoint->attitude.yaw)), sinf(radians(setpoint->attitude.yaw)), 0);
   struct vec yB = vnormalize(vcross(zB, xC));
   struct vec xB = vcross(yB, zB);
   struct mat33 Rd = mcolumns(xB, yB, zB);
@@ -176,9 +176,9 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
   float eyaw = radians(state->attitude.yaw) - setpoint_rpy.z;
 
   // Angular velocity setpoints are calculated in pptraj.c
-  float ewx = radians(sensors->gyro.x) - setpoint->attitudeRate.x;
-  float ewy = radians(sensors->gyro.y) - setpoint->attitudeRate.y;
-  float ewz = radians(sensors->gyro.z) - setpoint->attitudeRate.z;
+  float ewx = radians(sensors->gyro.x) - setpoint->attitudeRate.roll;
+  float ewy = radians(sensors->gyro.y) - setpoint->attitudeRate.pitch;
+  float ewz = radians(sensors->gyro.z) - setpoint->attitudeRate.yaw;
 
   // Compute control inputs: u = -K * (x - x_r) + u_r
   cmd_thrust_N = -K13 * ez - K16 * evz + vehicleWeight_N; 
