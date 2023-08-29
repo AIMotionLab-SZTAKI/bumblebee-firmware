@@ -244,7 +244,7 @@ static void handleLoadPosePackedPacket(CRTPPacket* pk) {
     // load_pose.stdDevPos = 1;  // not needed yet
     // load_pose.stdDevQuat = 1;
     // estimatorEnqueuePose(&ext_pose);
-    // setLoadState1Dof(&load_pose, now_ms_new-now_ms);
+    setLoadState1Dof(&load_pose, now_ms_new-now_ms);
     setLoadState2Dof(&load_pose, now_ms_new-now_ms);
     now_ms = now_ms_new;
     cur_id = 1 - cur_id;
@@ -266,7 +266,7 @@ static void handleLoadPosePacket(CRTPPacket* pk) {
     load_pose.quat.q3 = data.qw;
     // load_pose.stdDevPos = extPosStdDev;
     // load_pose.stdDevQuat = extQuatStdDev;
-    // setLoadState1Dof(&load_pose, now_ms_new-now_ms);
+    setLoadState1Dof(&load_pose, now_ms_new-now_ms);
     setLoadState2Dof(&load_pose, now_ms_new-now_ms);
     now_ms = now_ms_new;
   }

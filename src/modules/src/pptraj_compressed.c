@@ -36,7 +36,9 @@
 #define STORED_DISTANCE_SCALE 1000.0
 
 // In the stored version, we store angles in 1/10th degrees, hence this factor
-#define STORED_ANGLE_SCALE 0.1
+// this is the factor with which we will divide the compressed angles. The output shall be 
+// radians, the input is 1/10th degree, hence 180 * 10 / pi
+#define STORED_ANGLE_SCALE 572.96
 
 // Numbers of control points that we store for each storage method. Note that
 // we always store one less than the degree because the first control point of

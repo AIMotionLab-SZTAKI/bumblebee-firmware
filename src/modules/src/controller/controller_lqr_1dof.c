@@ -30,32 +30,30 @@ static uint8_t ctrlMode;
 
 static struct quat q;
 
-static float drone_mass = 0.605;
-static float payload_mass = 0.05;
+static float drone_mass = 0.65;
+static float payload_mass = 0.0736;
 
-static float real_mass = 0.605;
+static float real_mass = 0.65;
 
 static float measured_mass = 0;
 
-static float batt_comp_a = -0.1205;  // with kR = 0.6: -0.1205
-static float batt_comp_b = 2.6802;  // with kR = 0.6: 2.6802
+static float batt_comp_a = -0.1245; 
+static float batt_comp_b = 2.768; 
 
-static float K13 = 5.8055;
-static float K16 = 4.8982;
-static float K22 = -0.0991;
-static float K25 = -0.1213;
-static float K27 = 0.5053;
-static float K210 = 0.0799;
-static float K213 = -0.0199;
-static float K215 = 0.0106;
-static float K31 = 0.0958;
-static float K34 = 0.1173;
-static float K38 = 0.4885;
-static float K311 = 0.0773;
-static float K314 = -0.0193;
-static float K316 = 0.0102;
-static float K49 = 0.2906;
-static float K412 = 0.1358;
+static float K13 = 4;
+static float K16 = 2;
+static float K22 = -0.5;
+static float K25 = -0.3491;
+static float K27 = 1.1709;
+static float K210 = 0.204;
+static float K31 = 0.5;
+static float K34 = 0.3477;
+static float K38 = 1.1616;
+static float K311 = 0.1962;
+static float K313 = -0.0937;
+static float K314 = 0.0229;
+static float K49 = 0.5;
+static float K412 = 0.0539;
 
 
 static float dt;
@@ -165,30 +163,42 @@ void controllerLqr1Dof(control_t *control, const setpoint_t *setpoint,
   evy = state->velocity.y - setpointVel.y;
   evz = state->velocity.z - setpointVel.z;
 
+  float yaw = radians(state->attitude.yaw);
+  float ex_tr = cosf(yaw) * ex + sinf(yaw) * ey;
+  float ey_tr = -sinf(yaw) * ex + cosf(yaw) * ey;
+  float evx_tr = cosf(yaw) * evx + sinf(yaw) * evy;
+  float evy_tr = -sinf(yaw) * evx + cosf(yaw) * evy;
+
   alpha = load_rpy.y;
   dalpha = load_ang_vel.y;
 
-  float eroll = radians(state->attitude.roll);  // - setpoint_rpy.x;
-  float epitch = -radians(state->attitude.pitch);  // - setpoint_rpy.y;
-  float eyaw = radians(state->attitude.yaw);  // - setpoint_rpy.z;
+  float eroll = radians(state->attitude.roll) ;//- setpoint_rpy.x;
+  float epitch = -radians(state->attitude.pitch);// - setpoint_rpy.y;
+  float eyaw = radians(state->attitude.yaw) - setpoint_rpy.z;
+  while (eyaw > M_PI_F) {
+    eyaw -= 2 * M_PI_F;
+  }
+  while (eyaw < -M_PI_F) {
+    eyaw += 2 * M_PI_F;
+  }
 
   // Angular velocity setpoints are calculated in pptraj.c
-  float ewx = radians(sensors->gyro.x);  // - setpoint->attitudeRate.roll;
-  float ewy = radians(sensors->gyro.y);  // - setpoint->attitudeRate.pitch;
-  float ewz = radians(sensors->gyro.z);  // - setpoint->attitudeRate.yaw;
+  float ewx = radians(sensors->gyro.x); //- setpoint->attitudeRate.roll;
+  float ewy = radians(sensors->gyro.y); //- setpoint->attitudeRate.pitch;
+  float ewz = radians(sensors->gyro.z) - radians(setpoint->attitudeRate.yaw);
 
   // Compute control inputs: u = -K * (x - x_r) + u_r
   cmd_thrust_N = -K13 * ez - K16 * evz + vehicleWeight_N; 
-  cmd_roll = -K22 * ey - K25 * evy - K27 * eroll - K210 * ewx - K213 * alpha - K215 * dalpha;
-  cmd_pitch = -K31 * ex - K34 * evx - K38 * epitch - K311 * ewy;
+  cmd_roll = -K22 * ey_tr - K25 * evy_tr - K27 * eroll - K210 * ewx;
+  cmd_pitch = -K31 * ex_tr - K34 * evx_tr - K38 * epitch - K311 * ewy - K313 * alpha - K314 * dalpha;
   cmd_yaw = -K49 * eyaw - K412 * ewz;
 
   // measured mass
   measured_mass = cmd_thrust_N / (GRAVITY_MAGNITUDE) / mass_ratio;
-  if (measured_mass > 0.68f){
+  if (measured_mass > 0.7f){
     real_mass = drone_mass + payload_mass;
   }
-  else if (measured_mass < 0.65f) {
+  else if (measured_mass < 0.67f) {
     real_mass = drone_mass;
   }
 

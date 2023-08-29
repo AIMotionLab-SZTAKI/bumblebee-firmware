@@ -31,32 +31,32 @@ static uint8_t ctrlMode;
 
 static struct quat q;
 
-static float drone_mass = 0.605;
+static float drone_mass = 0.625;
 static float payload_mass = 0.05;
 
-static float real_mass = 0.605;
+static float real_mass = 0.625;
 
 static float measured_mass = 0;
 
 static float batt_comp_a = -0.1205;  // with kR = 0.6: -0.1205
 static float batt_comp_b = 2.6802;  // with kR = 0.6: 2.6802
 
-static float K13 = 5.8055;
-static float K16 = 4.8982;
-static float K22 = -0.0991;
-static float K25 = -0.1213;
-static float K27 = 0.5053;
-static float K210 = 0.0799;
-static float K213 = -0.0199;
-static float K215 = 0.0106;
-static float K31 = 0.0958;
-static float K34 = 0.1173;
-static float K38 = 0.4885;
-static float K311 = 0.0773;
-static float K314 = -0.0193;
-static float K316 = 0.0102;
-static float K49 = 0.2906;
-static float K412 = 0.1358;
+static float K13 = 1.118;
+static float K16 = 1.2248;
+static float K22 = -0.3536;
+static float K25 = -0.2565;
+static float K27 = 0.7213;
+static float K210 = 0.0846;
+static float K213 = 0.0183;
+static float K215 = 0.0248;
+static float K31 = 0.3536;
+static float K34 = 0.2563;
+static float K38 = 0.7192;
+static float K311 = 0.0842;
+static float K314 = 0.0188;
+static float K316 = 0.0248;
+static float K49 = 0.0354;
+static float K412 = 0.072;
 
 
 static float dt;
@@ -190,10 +190,10 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
 
   // measured mass
   measured_mass = cmd_thrust_N / (GRAVITY_MAGNITUDE) / mass_ratio;
-  if (measured_mass > 0.68f){
+  if (measured_mass > 0.7f){
     real_mass = drone_mass + payload_mass;
   }
-  else if (measured_mass < 0.65f) {
+  else if (measured_mass < 0.67f) {
     real_mass = drone_mass;
   }
 

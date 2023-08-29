@@ -125,6 +125,7 @@ static bool isEnabled = false;
 static bool isForcedToPass = false;
 static bool kalmanFilterResetRequested = false;
 static float homeCoordinate[3] = { 0, 0, -10000 };
+static float startYaw = 0.0f;
 
 static struct {
   logVarId_t kalmanPosVariance[3];
@@ -337,7 +338,11 @@ static preflight_check_result_t testHomePosition() {
   if (yaw >= 180) {
     yaw -= 360.0f;
   }
-  if (fabsf(yaw) > 10) {
+  float startYaw_normalized = startYaw;
+  if (startYaw_normalized >= 180.0f){
+    startYaw_normalized -= 360.0f;
+  }
+  if (fabsf(yaw - startYaw_normalized) > 15) {
     /* yaw diverged from zero */
     return preflightResultFail;
   }
@@ -636,6 +641,7 @@ PARAM_ADD(PARAM_UINT8, force, &isForcedToPass)
 PARAM_ADD(PARAM_FLOAT, homeX, &homeCoordinate[0])
 PARAM_ADD(PARAM_FLOAT, homeY, &homeCoordinate[1])
 PARAM_ADD(PARAM_FLOAT, homeZ, &homeCoordinate[2])
+PARAM_ADD(PARAM_FLOAT, startYaw, &startYaw)
 PARAM_GROUP_STOP(preflight)
 
 LOG_GROUP_START(preflight)

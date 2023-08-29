@@ -56,10 +56,10 @@ static float ctrl_thrust = 0;
 static struct quat q;
 static struct vec eR, ew, wd, er, ev, prev_wd;
 
-static float drone_mass = 0.605;
+static float drone_mass = 0.635;
 static float payload_mass = 0.0736;
 
-static float real_mass = 0.605;
+static float real_mass = 0.635;
 
 static float measured_mass = 0;
 
@@ -70,7 +70,7 @@ static float batt_comp_b = 2.768;  // with kR = 0.6: 2.6802
 
 void controllerGeomReset(void)
 {
-  //No integral part to reset
+  real_mass = drone_mass;
 }
 
 void controllerGeomInit(void)
@@ -175,10 +175,10 @@ void controllerGeom(control_t *control, const setpoint_t *setpoint,
     target_thrust.z = -kr*er.z - kv*ev.z + g_vehicleMass*(setpoint->acceleration.z + GRAVITY_MAGNITUDE);
     // measured mass
     measured_mass = target_thrust.z / (setpoint->acceleration.z + GRAVITY_MAGNITUDE) / mass_ratio;
-    if (measured_mass > 0.68f){
+    if (measured_mass > 0.7f){
       real_mass = drone_mass + payload_mass;
     }
-    else if (measured_mass < 0.65f) {
+    else if (measured_mass < 0.67f) {
       real_mass = drone_mass;
     }
   }  
