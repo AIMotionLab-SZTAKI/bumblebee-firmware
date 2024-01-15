@@ -47,6 +47,7 @@
 #include "crtp_localization_service.h"
 #include "controller_lqr_1dof.h"
 #include "controller_lqr_2dof.h"
+#include "math3d.h"
 
 #define DEBUG_MODULE "SHOW"
 #include "debug.h"
@@ -107,6 +108,7 @@ static uint8_t payload_id = 12;
 static uint8_t cur_id = 0;
 static uint32_t now_ms;
 static uint32_t load_pose_ctr;
+static float alpha;
 
 static struct {
   logVarId_t stateEstimateYaw;
@@ -268,6 +270,8 @@ static void handleLoadPosePacket(CRTPPacket* pk) {
     // load_pose.stdDevQuat = extQuatStdDev;
     setLoadState1Dof(&load_pose, now_ms_new-now_ms);
     setLoadState2Dof(&load_pose, now_ms_new-now_ms);
+    struct vec rpy = quat2rpy(mkquat(data.qx, data.qy, data.qz, data.qw));
+    alpha = rpy.y;
     now_ms = now_ms_new;
   }
 }
@@ -424,5 +428,6 @@ LOG_ADD(LOG_FLOAT, qx, &load_pose.quat.x)
 LOG_ADD(LOG_FLOAT, qy, &load_pose.quat.y)
 LOG_ADD(LOG_FLOAT, qz, &load_pose.quat.z)
 LOG_ADD(LOG_FLOAT, qw, &load_pose.quat.w)
+LOG_ADD(LOG_FLOAT, alpha, &alpha)
 LOG_ADD(LOG_UINT32, counter, &load_pose_ctr)
 LOG_GROUP_STOP(load_pose)
