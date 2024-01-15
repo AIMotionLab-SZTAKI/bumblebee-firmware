@@ -122,6 +122,12 @@ static struct {
   int16_t az;
 } setpointCompressed;
 
+static float ctr_roll;
+static float ctr_pitch;
+static float ctr_yaw;
+static float ctr_thrust;
+static float target_yaw;
+
 STATIC_MEM_TASK_ALLOC(stabilizerTask, STABILIZER_TASK_STACKSIZE);
 
 static void stabilizerTask(void* param);
@@ -297,6 +303,12 @@ static void stabilizerTask(void* param)
       collisionAvoidanceUpdateSetpoint(&setpoint, &sensorData, &state, tick);
 
       controller(&control, &setpoint, &sensorData, &state, tick);
+
+      ctr_roll = control.torqueX;
+      ctr_pitch = control.torqueY;
+      ctr_yaw = control.torqueZ;
+      ctr_thrust = control.thrustSi;
+      target_yaw = setpoint.attitude.yaw;
 
       checkEmergencyStopTimeout();
 
@@ -665,7 +677,12 @@ LOG_ADD_CORE(LOG_FLOAT, z, &sensorData.mag.z)
 LOG_GROUP_STOP(mag)
 
 LOG_GROUP_START(controller)
-LOG_ADD(LOG_INT16, ctr_yaw, &control.yaw)
+//LOG_ADD(LOG_INT16, ctr_yaw, &control.yaw)
+LOG_ADD(LOG_FLOAT, ctr_roll, &ctr_roll)
+LOG_ADD(LOG_FLOAT, ctr_pitch, &ctr_pitch)
+LOG_ADD(LOG_FLOAT, ctr_yaw, &ctr_yaw)
+LOG_ADD(LOG_FLOAT, ctr_thrust, &ctr_thrust)
+LOG_ADD(LOG_FLOAT, target_yaw, &target_yaw)
 LOG_GROUP_STOP(controller)
 
 /**
