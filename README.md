@@ -17,13 +17,9 @@ For aimotionlab employees:
 
 2. git submodule init, git submodule update
 
-3. git checkout cm-develop
+3. cd app, then build with `./compile bumblebee`
 
-4. git submodule init, git submodule update
-
-5. if you swapped branch to cm-develop, the folder "app" should appear. cd app, then build with `./compile bumblebee`
-
-6. flash by putting the drone into flash mode, then initiate flashing with `python3 -m cfloader flash bolt-skybrush-bumblebee.bin stm32-fw`
+4. flash by putting the drone into flash mode, then initiate flashing with `python3 -m cfloader flash bolt-skybrush-bumblebee.bin stm32-fw`
 
 
 ## Official Documentation
