@@ -19,10 +19,10 @@ static float Izz = 0.00277;
 static float dt = (float)(1.0f/ATTITUDE_RATE);
 
 // Bumblebee
-static float kr = 4;
-static float kv = 2;
-static float kR = 0.6;
-static float kw = 0.15;
+static float kr = 6;
+static float kv = 3;
+static float kR = 0.8;
+static float kw = 0.2;
 
 
 
@@ -68,9 +68,12 @@ static float psi = 0;
 static float batt_comp_a = -0.1245;  // with kR = 0.6: -0.1205
 static float batt_comp_b = 2.768;  // with kR = 0.6: 2.6802
 
+static float supplyVoltage;
+
 void controllerGeomReset(void)
 {
   real_mass = drone_mass;
+  supplyVoltage = pmGetBatteryVoltage();
 }
 
 void controllerGeomInit(void)
@@ -94,8 +97,8 @@ void controllerGeom(control_t *control, const setpoint_t *setpoint,
 
   if (payload_mass < 0.0f) {
     payload_mass = 0.0f;
-  } else if (payload_mass > 0.1f) {
-    payload_mass = 0.1f;
+  } else if (payload_mass > 0.15f) {
+    payload_mass = 0.15f;
   }
 
 
@@ -104,7 +107,7 @@ void controllerGeom(control_t *control, const setpoint_t *setpoint,
   //Log variable
   ctrlMode = control->controlMode;
   //After this, we ought to work only with SI units, as force-torque control takes SI inputs
-  float supplyVoltage = pmGetBatteryVoltage();  
+  supplyVoltage = 0.99f * supplyVoltage + 0.01f * pmGetBatteryVoltage();  
   float mass_ratio = batt_comp_a * supplyVoltage + batt_comp_b;  
   float g_vehicleMass = real_mass * mass_ratio;
   float vehicleWeight_N = g_vehicleMass * GRAVITY_MAGNITUDE; //in N
@@ -172,7 +175,7 @@ void controllerGeom(control_t *control, const setpoint_t *setpoint,
     //In normal operation, this is the code path that we follow
     target_thrust.x = -kr*er.x - kv*ev.x + g_vehicleMass*setpoint->acceleration.x;
     target_thrust.y = -kr*er.y - kv*ev.y + g_vehicleMass*setpoint->acceleration.y;
-    target_thrust.z = -kr*er.z - kv*ev.z + g_vehicleMass*(setpoint->acceleration.z + GRAVITY_MAGNITUDE);
+    target_thrust.z = -10.0f*er.z - 5.0f*ev.z + g_vehicleMass*(setpoint->acceleration.z + GRAVITY_MAGNITUDE);
     // measured mass
     measured_mass = target_thrust.z / (setpoint->acceleration.z + GRAVITY_MAGNITUDE) / mass_ratio;
     if (measured_mass > 0.7f){
@@ -339,4 +342,5 @@ LOG_ADD(LOG_UINT8, quat_Mode, &setPointMode_quat)
 LOG_ADD(LOG_UINT8, ctrlMode, &ctrlMode)
 LOG_ADD(LOG_FLOAT, measured_mass, &measured_mass)
 LOG_ADD(LOG_FLOAT, real_mass, &real_mass)
+LOG_ADD(LOG_FLOAT, voltage, &supplyVoltage)
 LOG_GROUP_STOP(ctrlGeom)

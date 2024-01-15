@@ -40,8 +40,8 @@ static float measured_mass = 0;
 static float batt_comp_a = -0.1245; 
 static float batt_comp_b = 2.768; 
 
-static float K13 = 4;
-static float K16 = 2;
+static float K13 = 6;
+static float K16 = 3;
 static float K22 = -0.5;
 static float K25 = -0.3491;
 static float K27 = 1.1709;
@@ -119,8 +119,8 @@ void controllerLqr1Dof(control_t *control, const setpoint_t *setpoint,
 
   if (payload_mass < 0.0f) {
     payload_mass = 0.0f;
-  } else if (payload_mass > 0.1f) {
-    payload_mass = 0.1f;
+  } else if (payload_mass > 0.15f) {
+    payload_mass = 0.15f;
   }
 
   //Enter force-torque control
@@ -235,8 +235,8 @@ LOG_ADD(LOG_FLOAT, ey, &ey)
 LOG_ADD(LOG_FLOAT, evy, &evy)
 LOG_ADD(LOG_FLOAT, ez, &ez)
 LOG_ADD(LOG_FLOAT, evz, &evz)
-LOG_ADD(LOG_FLOAT, alpha, &alpha)
-LOG_ADD(LOG_FLOAT, dalpha, &dalpha)
+LOG_ADD(LOG_FLOAT, alpha, &load_rpy.y)
+LOG_ADD(LOG_FLOAT, dalpha, &load_ang_vel.y)
 LOG_ADD(LOG_FLOAT, dt, &dt)
 LOG_ADD(LOG_UINT8, x_Mode, &setPointMode_x)
 LOG_ADD(LOG_UINT8, y_Mode, &setPointMode_y)
