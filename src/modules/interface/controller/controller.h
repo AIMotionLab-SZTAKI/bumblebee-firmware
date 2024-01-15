@@ -37,6 +37,7 @@ typedef enum {
   ControllerTypeGeom,
   ControllerTypeLqr1Dof,
   ControllerTypeLqr2Dof,
+  ControllerTypeSwitch,
   ControllerType_COUNT,
 } ControllerType;
 
