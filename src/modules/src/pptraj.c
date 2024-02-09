@@ -40,6 +40,9 @@ See Daniel Mellinger, Vijay Kumar: "Minimum snap trajectory generation and contr
 #include "pptraj.h"
 
 #define GRAV (9.81f)
+#define MASS (0.605f)
+#define JXY (1.5e-3f)
+#define JZ (2.66e-3f)
 
 static struct poly4d poly4d_tmp;
 
@@ -306,12 +309,18 @@ struct traj_eval poly4d_eval(struct poly4d const *p, float t)
 	// 2nd derivative
 	polyder4d(deriv);
 	out.acc = polyval_xyz(deriv, t);
+	float ddyaw = polyval_yaw(deriv, t);
 
 	// 3rd derivative
 	polyder4d(deriv);
 	struct vec jerk = polyval_xyz(deriv, t);
 
-	struct vec thrust = vadd(out.acc, mkvec(0, 0, GRAV));
+	// 4th derivative
+	polyder4d(deriv);
+	struct vec snap = polyval_xyz(deriv, t);
+
+	struct vec thrust = vadd(out.acc, mkvec(0, 0, GRAV)); // * m
+	out.thrust = MASS * vmag(thrust);
 	// float thrust_mag = mass * vmag(thrust);
 
 	struct vec z_body = vnormalize(thrust);
@@ -325,6 +334,18 @@ struct traj_eval poly4d_eval(struct poly4d const *p, float t)
 	out.omega.x = -vdot(h_w, y_body);
 	out.omega.y = vdot(h_w, x_body);
 	out.omega.z = z_body.z * dyaw;
+
+	float thrust_der = vdot(jerk, z_body);
+	float thrust_der_der = vdot(snap, z_body) - 2.0f * thrust_der * vdot(vcross(out.omega, z_body), z_body) - vmag(thrust) * vdot(vcross(out.omega, vcross(out.omega, z_body)), z_body);
+
+	struct vec h_dw = vsub(vscl(1.0f / vmag(thrust), vsub2(snap, vscl(thrust_der_der, z_body), vscl(2*thrust_der, vcross(out.omega, z_body)))), vcross(out.omega, vcross(out.omega, z_body))); 
+
+	struct vec alpha = mkvec(-vdot(h_dw, y_body), vdot(h_w, x_body), z_body.z * ddyaw);
+	struct vec J = mkvec(JXY, JXY, JZ);
+	out.torques = vadd(veltmul(J, alpha), vcross(out.omega, veltmul(J, out.omega)));
+	
+	struct mat33 R = mcolumns(x_body, y_body, z_body);
+	out.rpy = quat2rpy(mat2quat(R));
 
 	return out;
 }

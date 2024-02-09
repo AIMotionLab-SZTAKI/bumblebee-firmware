@@ -58,6 +58,8 @@ such as: take-off, landing, polynomial trajectories.
 #include "stabilizer_types.h"
 #include "stabilizer.h"
 
+#include "debug.h"
+
 // Local types
 enum TrajectoryLocation_e {
   TRAJECTORY_LOCATION_INVALID = 0,
@@ -337,10 +339,16 @@ bool crtpCommanderHighLevelGetSetpoint(setpoint_t* setpoint, const state_t *stat
     setpoint->velocity.x = ev.vel.x;
     setpoint->velocity.y = ev.vel.y;
     setpoint->velocity.z = ev.vel.z;
+    setpoint->attitude.roll = degrees(ev.rpy.x);
+    setpoint->attitude.pitch = degrees(ev.rpy.y);
     setpoint->attitude.yaw = degrees(ev.yaw);
     setpoint->attitudeRate.roll = degrees(ev.omega.x);
     setpoint->attitudeRate.pitch = degrees(ev.omega.y);
     setpoint->attitudeRate.yaw = degrees(ev.omega.z);
+    setpoint->thrust = ev.thrust;
+    setpoint->torques.x = ev.torques.x;
+    setpoint->torques.y = ev.torques.y;
+    setpoint->torques.z = ev.torques.z;
     setpoint->mode.x = modeAbs;
     setpoint->mode.y = modeAbs;
     setpoint->mode.z = modeAbs;
@@ -351,7 +359,7 @@ bool crtpCommanderHighLevelGetSetpoint(setpoint_t* setpoint, const state_t *stat
     setpoint->acceleration.x = ev.acc.x;
     setpoint->acceleration.y = ev.acc.y;
     setpoint->acceleration.z = ev.acc.z;
-
+    setpoint->t_traj = (uint32_t)((t - planner.trajectory->t_begin) * 1000);
     // store the last setpoint
     pos = ev.pos;
     vel = ev.vel;
@@ -631,7 +639,7 @@ int start_trajectory(const struct data_start_trajectory* data, float offset)
 
 int define_trajectory(const struct data_define_trajectory* data)
 {
-  if (data->trajectoryId >= NUM_TRAJECTORY_DEFINITIONS) {
+  if (data->trajectoryId >= NUM_TRAJECTORY_DEFINITIONS || data->description.trajectoryIdentifier.mem.offset % 4) {
     return ENOEXEC;
   }
   trajectory_descriptions[data->trajectoryId] = data->description;

@@ -19,11 +19,19 @@ static float Izz = 0.00277;
 static float dt = (float)(1.0f/ATTITUDE_RATE);
 
 // Bumblebee
+// with 1 DoF hook:
+/*
 static float kr = 6;
 static float kv = 3;
 static float kR = 0.8;
 static float kw = 0.2;
+*/
 
+// else:
+static float kr = 4;
+static float kv = 2;
+static float kR = 0.6;
+static float kw = 0.15;
 
 
 static float pitch_q= 0.0;

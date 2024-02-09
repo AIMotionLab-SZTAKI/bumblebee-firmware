@@ -47,6 +47,7 @@
 #include "crtp_localization_service.h"
 #include "controller_lqr_1dof.h"
 #include "controller_lqr_2dof.h"
+#include "controller_lqr.h"
 #include "math3d.h"
 
 #define DEBUG_MODULE "SHOW"
@@ -54,6 +55,8 @@
 
 #define CONTROL_CH 0
 #define LOAD_POSE_CH 1
+#define LQR_PARAMS_CH 2
+#define LQR_PARAM_NUM 48
 
 #define CMD_START  0
 #define CMD_PAUSE  1
@@ -101,6 +104,12 @@ struct data_load_pose {
   float qz;
   float qw;
 } __attribute__((packed));  // similar to CrtpExtPose in crtp_localization_service
+
+struct data_lqr_params {
+  uint8_t idx; //
+  uint32_t timestamp; //ms
+  float32_t params[6];
+} __attribute__((packed));
 
 static bool isInit = false;
 static poseMeasurement_t load_pose;
@@ -225,11 +234,56 @@ static void droneShowSrvLoadPosePacket(CRTPPacket* pk) {
   crtpSendPacket(pk);
 }
 
+static uint8_t lqr_idx = 0;
+static float32_t K[LQR_PARAM_NUM] = {0.0f};
+static uint8_t num_lqr_packets = (uint8_t)(LQR_PARAM_NUM % 6) ? (uint8_t)(LQR_PARAM_NUM / 6 + 1): (uint8_t)(LQR_PARAM_NUM / 6); 
+static uint16_t lqr_timestamp;
+
+
+static void handleLqrParamsPacket(CRTPPacket* pk) {
+  struct data_lqr_params data = *((struct data_lqr_params*)pk->data);
+  if (data.idx == 0) { // if data is the first packet for a parameter set
+      lqr_timestamp = data.timestamp; //save the parameter set's timestamp
+      lqr_idx = 0; 
+  }
+  if (data.idx == lqr_idx && data.timestamp == lqr_timestamp) {  // if the packet is in order and has correct timestamp
+    //save its first LQR_PARAM_NUM elements (last few may not be needed based on how the packets were divided)
+    for (int i=0; i<6; i++) {
+        uint8_t K_idx = 6*lqr_idx + i; 
+        if (K_idx < LQR_PARAM_NUM)
+          K[K_idx] = data.params[i];
+    }
+    if (lqr_idx < num_lqr_packets-1) {
+      lqr_idx++; // expect the next packet if current one wasn't the last
+    } else {
+      lqr_idx = 0;
+      setLqrParams(K, 48, data.timestamp);
+    }    
+  } else {
+    lqr_idx = 0;
+  }
+}
+
+
+static void droneShowSrvLqrParamsPacket(CRTPPacket* pk) {
+  if (pk->size < 1) {
+    return;
+  }
+  handleLqrParamsPacket(pk); 
+  //crtpSendPacket(pk); // send ack
+}
+
 static void droneShowSrvCrtpCB(CRTPPacket* pk) {
-  if (pk->channel == CONTROL_CH) {
-    droneShowSrvProcessControlPacket(pk);
-  } else if (pk->channel == LOAD_POSE_CH) {
-    droneShowSrvLoadPosePacket(pk);
+  switch (pk->channel) {
+    case CONTROL_CH:
+      droneShowSrvProcessControlPacket(pk);
+      break;
+    case LOAD_POSE_CH:
+      droneShowSrvLoadPosePacket(pk);
+      break;
+    case LQR_PARAMS_CH:
+      droneShowSrvLqrParamsPacket(pk);
+      break;
   }
 }
 

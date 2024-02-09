@@ -10,6 +10,7 @@
 #include "controller_geom.h"
 #include "controller_lqr_1dof.h"
 #include "controller_lqr_2dof.h"
+#include "controller_lqr.h"
 #include "controller_switch.h"
 
 #include "autoconf.h"
@@ -35,6 +36,7 @@ static ControllerFcns controllerFunctions[] = {
   {.init = controllerGeomInit, .test = controllerGeomTest, .update = controllerGeom, .name = "Geometric"},
   {.init = controllerLqr1DofInit, .test = controllerLqr1DofTest, .update = controllerLqr1Dof, .name = "LQR-1Dof"},
   {.init = controllerLqr2DofInit, .test = controllerLqr2DofTest, .update = controllerLqr2Dof, .name = "LQR-2Dof"},
+  {.init = controllerLqrInit, .test = controllerLqrTest, .update = controllerLqr, .name = "LQR"},
   {.init = controllerSwitchInit, .test = controllerSwitchTest, .update = controllerSwitch, .name = "LQR-TO-GEOM"},
 };
 
@@ -64,6 +66,8 @@ void controllerInit(ControllerType controller) {
     #define CONTROLLER ControllerTypeLqr1Dof
   #elif defined(CONFIG_CONTROLLER_LQR2DOF)
     #define CONTROLLER ControllerTypeLqr2Dof
+  #elif defined(CONFIG_CONTROLLER_LQR)
+    #define CONTROLLER ControllerTypeLqr
   #elif defined(CONFIG_CONTROLLER_SWITCH)
     #define CONTROLLER ControllerTypeSwitch
   #else

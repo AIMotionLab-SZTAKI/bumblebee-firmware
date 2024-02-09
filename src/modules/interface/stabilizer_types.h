@@ -246,6 +246,7 @@ typedef enum mode_e {
 
 typedef struct setpoint_s {
   uint32_t timestamp;
+  uint32_t t_traj;
 
   attitude_t attitude;      // deg
   attitude_t attitudeRate;  // deg/s
@@ -255,6 +256,7 @@ typedef struct setpoint_s {
   velocity_t velocity;      // m/s
   acc_t acceleration;       // m/s^2
   bool velocity_body;       // true if velocity is given in body frame; false if velocity is given in world frame
+  vector_t torques;         // Nm
 
   struct {
     stab_mode_t x;

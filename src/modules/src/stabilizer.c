@@ -369,6 +369,11 @@ void stabilizerSetEmergencyStopTimeout(int timeout)
   emergencyStopTimeout = timeout;
 }
 
+void forceControllerType(ControllerType controller) {
+  controllerInit(controller);
+  controllerType = controller;
+}
+
 /**
  * Parameters to set the estimator and controller type
  * for the stabilizer module, or to do an emergency stop
