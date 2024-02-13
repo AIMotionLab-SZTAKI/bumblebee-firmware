@@ -125,6 +125,10 @@ struct traj_eval
 	struct vec torques;
 	float thrust;
 	float yaw;
+	float alpha;
+	float beta;
+	float dalpha;
+	float dbeta;
 };
 
 // a traj_eval with all zero members.

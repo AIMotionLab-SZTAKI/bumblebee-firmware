@@ -257,6 +257,10 @@ typedef struct setpoint_s {
   acc_t acceleration;       // m/s^2
   bool velocity_body;       // true if velocity is given in body frame; false if velocity is given in world frame
   vector_t torques;         // Nm
+  float alpha; // rad
+  float beta; // rad
+  float dalpha; // rad/s
+  float dbeta; // rad/s
 
   struct {
     stab_mode_t x;

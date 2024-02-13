@@ -36,8 +36,8 @@ static ControllerFcns controllerFunctions[] = {
   {.init = controllerGeomInit, .test = controllerGeomTest, .update = controllerGeom, .name = "Geometric"},
   {.init = controllerLqr1DofInit, .test = controllerLqr1DofTest, .update = controllerLqr1Dof, .name = "LQR-1Dof"},
   {.init = controllerLqr2DofInit, .test = controllerLqr2DofTest, .update = controllerLqr2Dof, .name = "LQR-2Dof"},
-  {.init = controllerLqrInit, .test = controllerLqrTest, .update = controllerLqr, .name = "LQR"},
   {.init = controllerSwitchInit, .test = controllerSwitchTest, .update = controllerSwitch, .name = "LQR-TO-GEOM"},
+  {.init = controllerLqrInit, .test = controllerLqrTest, .update = controllerLqr, .name = "LQR"},
 };
 
 

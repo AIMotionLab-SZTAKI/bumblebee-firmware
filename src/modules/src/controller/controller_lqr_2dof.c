@@ -11,6 +11,7 @@ LQR payload stabilizing controller.
 #include "physicalConstants.h"
 #include "controller_lqr_2dof.h"
 #include "pm.h"
+#include "stdlib.h"
 
 
 // Logging variables
@@ -19,13 +20,6 @@ static float cmd_thrust_N;
 static float cmd_roll;
 static float cmd_pitch;
 static float cmd_yaw;
-static uint8_t setPointMode_x;
-static uint8_t setPointMode_y;
-static uint8_t setPointMode_z;
-static uint8_t setPointMode_roll;
-static uint8_t setPointMode_pitch;
-static uint8_t setPointMode_yaw;
-static uint8_t setPointMode_quat;
 static uint8_t ctrlMode;
 
 
@@ -33,34 +27,29 @@ static struct quat q;
 
 static float drone_mass = 0.625;
 static float payload_mass = 0.05;
+static float rod_length_safety = 5.0;
 
-static float real_mass = 0.625;
+// static float real_mass = 0.625;
 
-static float measured_mass = 0;
+// static float measured_mass = 0;
 
-static float batt_comp_a = -0.1205;  // with kR = 0.6: -0.1205
-static float batt_comp_b = 2.6802;  // with kR = 0.6: 2.6802
+static float batt_comp_a = -0.1205;
+static float batt_comp_b = 2.6802;
 
-static float K13 = 1.118;
-static float K16 = 1.2248;
-static float K22 = -0.3536;
-static float K25 = -0.2565;
-static float K27 = 0.7213;
-static float K210 = 0.0846;
-static float K213 = 0.0183;
-static float K215 = 0.0248;
-static float K31 = 0.3536;
-static float K34 = 0.2563;
-static float K38 = 0.7192;
-static float K311 = 0.0842;
-static float K314 = 0.0188;
-static float K316 = 0.0248;
-static float K49 = 0.0354;
-static float K412 = 0.072;
+static float K[4][16];
 
+static uint32_t K_timestamp;
+static uint32_t traj_timestamp;
+static int32_t delay;
+static int32_t max_delay = 200;
+static uint32_t delay_ctr = 0;
+static uint32_t max_delay_time_ms = 200;
 
 static float dt;
-static float ex, ey, ez, evx, evy, evz, alpha, dalpha, beta, dbeta;
+static float ex, ey, ez;
+// evx, evy, evz, 
+static float alpha, dalpha, beta, dbeta;
+static float alpha_ref, beta_ref, dalpha_ref, dbeta_ref;
 
 static poseMeasurement_t load_pose;
 
@@ -72,6 +61,20 @@ static float average_weight_pos = 0.5;
 static float average_weight_att = 0.4;
 
 static const state_t* cur_state;
+
+static float K1, K2, K3, K4, K5, K6, K7, K8; // only for logging 
+
+void setLqr2DofParams(float params[], int param_num, uint16_t timestamp) {
+  for (int i=0; i<4; i++) {
+    for (int j=0; j<16; j++) {
+      int cur_idx = 16*i+j;
+      if (cur_idx < param_num) {
+        K[i][j] = params[16*i+j];
+      }
+    }
+  }
+  K_timestamp = timestamp;
+}
 
 void setLoadState2Dof(const poseMeasurement_t *measurement, uint32_t dt_ms)
 {
@@ -96,7 +99,31 @@ void setLoadState2Dof(const poseMeasurement_t *measurement, uint32_t dt_ms)
 
 void controllerLqr2DofReset(void)
 {
-  //No integral part to reset
+  for (int i=0; i<4; i++) {
+    for (int j=0; j<16; j++) {
+      K[i][j] = 0.0f;
+    }
+  }
+  K[0][2] = 4.3746;
+  K[0][5] = 2.739;
+  K[1][1] = -0.2899;
+  K[1][4] = -0.2343;
+  K[1][6] = 0.8058;
+  K[1][9] = 0.1073;
+  K[1][12] = -0.0302;
+  K[1][14] = 0.024;
+  K[2][0] = 0.2853;
+  K[2][3] = 0.2305;
+  K[2][7] = 0.7922;
+  K[2][10] = 0.1054;
+  K[2][13] = -0.0296;
+  K[2][15] = 0.0236;
+  K[3][8] = 0.0372;
+  K[3][11] = 0.1188;
+
+  delay_ctr=0;
+  K_timestamp = 0;
+  traj_timestamp = 0;
 }
 
 void controllerLqr2DofInit(void)
@@ -126,68 +153,81 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
     payload_mass = 0.1f;
   }
 
+  // Only for logging
+  K1 = K[0][2];
+  K2 = K[0][5];
+  K3 = K[1][1];
+  K4 = K[1][4];
+  K5 = K[1][6];
+  K6 = K[1][9];
+  K7 = K[2][0];
+  K8 = K[2][3];
+
   //Enter force-torque control
   control->controlMode = controlModeForceTorque;
   //Log variable
   ctrlMode = control->controlMode;
   //After this, we ought to work only with SI units, as force-torque control takes SI inputs
+  
   float supplyVoltage = pmGetBatteryVoltage();  
   float mass_ratio = batt_comp_a * supplyVoltage + batt_comp_b;  
-  float g_vehicleMass = real_mass * mass_ratio;
-  float vehicleWeight_N = g_vehicleMass * GRAVITY_MAGNITUDE; //in N
+  //float g_vehicleMass = real_mass * mass_ratio;
+  //float vehicleWeight_N = g_vehicleMass * GRAVITY_MAGNITUDE; //in N
+  
 
-  //Log variables
-  setPointMode_x = setpoint->mode.x;
-  setPointMode_y = setpoint->mode.y;
-  setPointMode_z = setpoint->mode.z;
-  setPointMode_roll = setpoint->mode.roll;
-  setPointMode_pitch = setpoint->mode.pitch;
-  setPointMode_yaw = setpoint->mode.yaw;
-  setPointMode_quat = setpoint->mode.quat;
- 
-  //Position in m, velocity in m/s
-  struct vec setpointPos = mkvec(setpoint->position.x, setpoint->position.y, setpoint->position.z);
-  struct vec setpointVel = mkvec(setpoint->velocity.x, setpoint->velocity.y, setpoint->velocity.z);
+  float setpoint_arr[16] = {setpoint->position.x, setpoint->position.y, setpoint->position.z, setpoint->velocity.x, setpoint->velocity.y, setpoint->velocity.z,
+                            radians(setpoint->attitude.roll), radians(setpoint->attitude.pitch), radians(setpoint->attitude.yaw), 
+                            radians(setpoint->attitudeRate.roll), radians(setpoint->attitudeRate.pitch), radians(setpoint->attitudeRate.yaw), 
+                            setpoint->alpha, setpoint->beta, setpoint->dalpha, setpoint->dbeta};
+  alpha_ref = setpoint->alpha;
+  beta_ref = setpoint->beta;
+  dalpha_ref = setpoint->dalpha;
+  dbeta_ref = setpoint->dbeta;
 
-  // Angle setpoints are not calculated in pptraj.c
-  struct vec zB = vnormalize(mkvec(setpoint->acceleration.x, setpoint->acceleration.y, setpoint->acceleration.z + GRAVITY_MAGNITUDE));
-  struct vec xC = mkvec(cosf(radians(setpoint->attitude.yaw)), sinf(radians(setpoint->attitude.yaw)), 0);
-  struct vec yB = vnormalize(vcross(zB, xC));
-  struct vec xB = vcross(yB, zB);
-  struct mat33 Rd = mcolumns(xB, yB, zB);
-  struct vec setpoint_rpy = quat2rpy(mat2quat(Rd));
-
-  // Compute error vector: drone position, swing angle
-  ex = state->position.x - setpointPos.x;
-  ey = state->position.y - setpointPos.y;
-  ez = state->position.z - setpointPos.z;
-
-  evx = state->velocity.x - setpointVel.x;
-  evy = state->velocity.y - setpointVel.y;
-  evz = state->velocity.z - setpointVel.z;
-
+  traj_timestamp = setpoint->t_traj;
+  delay = (int32_t)traj_timestamp - (int32_t)K_timestamp;  
+  if (setpoint->mode.z == modeDisable) {
+    delay = 0;
+  }
+  uint32_t delay_ctr_max = ATTITUDE_RATE * max_delay_time_ms / 1000;
+  if (abs(delay) > max_delay) {
+    delay_ctr++;
+    if (delay_ctr > delay_ctr_max) {
+      forceControllerType(ControllerTypeGeom);
+    }
+  } else {
+    delay_ctr=0;
+  }
+  float wx = radians(sensors->gyro.x);
+  float wy = radians(sensors->gyro.y);
+  float wz = radians(sensors->gyro.z);
   alpha = load_rpy.x;
   dalpha = load_ang_vel.x;
   beta = load_rpy.y;
   dbeta = load_ang_vel.y;
+  float state_arr[16] = {state->position.x, state->position.y, state->position.z, state->velocity.x, state->velocity.y, state->velocity.z,
+                         radians(state->attitude.roll), -radians(state->attitude.pitch), radians(state->attitude.yaw), wx, wy, wz,
+                         alpha, beta, dalpha, dbeta};
 
-  float eroll = radians(state->attitude.roll) - setpoint_rpy.x;
-  float epitch = -radians(state->attitude.pitch) - setpoint_rpy.y;
-  float eyaw = radians(state->attitude.yaw) - setpoint_rpy.z;
+  float err_arr[16];
+  for (int i=0; i < 16; i++) {
+    err_arr[i] = state_arr[i] - setpoint_arr[i];
+  }
 
-  // Angular velocity setpoints are calculated in pptraj.c
-  float ewx = radians(sensors->gyro.x) - setpoint->attitudeRate.roll;
-  float ewy = radians(sensors->gyro.y) - setpoint->attitudeRate.pitch;
-  float ewz = radians(sensors->gyro.z) - setpoint->attitudeRate.yaw;
+  ex = err_arr[0];
+  ey = err_arr[1];
+  ez = err_arr[2];
 
-  // Compute control inputs: u = -K * (x - x_r) + u_r
-  cmd_thrust_N = -K13 * ez - K16 * evz + vehicleWeight_N; 
-  cmd_roll = -K22 * ey - K25 * evy - K27 * eroll - K210 * ewx - K213 * alpha - K215 * dalpha;
-  cmd_pitch = -K31 * ex - K34 * evx - K38 * epitch - K311 * ewy - K314 * beta - K316 * dbeta;
-  cmd_yaw = -K49 * eyaw - K412 * ewz;
-  // TODO: thrust = cmd_thrust_N, M.y = cmd_pitch
+  float eyaw = err_arr[8];
+  while (eyaw > M_PI_F) {
+    eyaw -= 2 * M_PI_F;
+  }
+  while (eyaw < -M_PI_F) {
+    eyaw += 2 * M_PI_F;
+  }
+  err_arr[8] = eyaw;
 
-
+  /*
   // measured mass
   measured_mass = cmd_thrust_N / (GRAVITY_MAGNITUDE) / mass_ratio;
   if (measured_mass > 0.7f){
@@ -196,8 +236,33 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
   else if (measured_mass < 0.67f) {
     real_mass = drone_mass;
   }
+  */
+
+  // Compute control inputs: u = -K * (x - x_r) + u_r
+  cmd_thrust_N = setpoint->thrust * mass_ratio;
+  cmd_roll = setpoint->torques.x;
+  cmd_pitch = setpoint->torques.y;
+  cmd_yaw = setpoint->torques.z;
+
+  int num_states_to_control = 16;
+  if (state->position.z < rod_length_safety) {
+    num_states_to_control = 12;
+  }
+  for (int i=0; i < num_states_to_control; i++) {
+    cmd_thrust_N += - K[0][i] * err_arr[i];
+    cmd_roll += - K[1][i] * err_arr[i];
+    cmd_pitch += - K[2][i] * err_arr[i];
+    cmd_yaw += - K[3][i] * err_arr[i];
+  }
+
+  if (cmd_thrust_N > 8.0f) {
+    cmd_thrust_N = 8.0f;
+  }
 
   control->thrustSi = cmd_thrust_N;
+  if (setpoint->mode.z == modeDisable) {
+    control->thrustSi = 0;
+  }
   if(control->thrustSi > 0){
     control->torqueX = cmd_roll;
     control->torqueY = cmd_pitch;
@@ -213,36 +278,48 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
 PARAM_GROUP_START(Lqr2)
 PARAM_ADD(PARAM_FLOAT, drone_mass, &drone_mass)
 PARAM_ADD(PARAM_FLOAT, payload_mass, &payload_mass)
+PARAM_ADD(PARAM_INT32, max_delay, &max_delay)
+PARAM_ADD(PARAM_UINT32, max_delay_time_ms, &max_delay_time_ms)
 PARAM_ADD(PARAM_FLOAT, batt_comp_a, &batt_comp_a)
 PARAM_ADD(PARAM_FLOAT, batt_comp_b, &batt_comp_b)
 PARAM_ADD(PARAM_FLOAT, w_pos, &average_weight_pos)
 PARAM_ADD(PARAM_FLOAT, w_att, &average_weight_att)
+PARAM_ADD(PARAM_FLOAT, rod_length_safety, &rod_length_safety)
 PARAM_GROUP_STOP(Lqr2)
 
 
 LOG_GROUP_START(Lqr2)
+LOG_ADD(LOG_UINT32, traj_timestamp, &traj_timestamp)
+LOG_ADD(LOG_UINT32, K_timestamp, &K_timestamp)
+LOG_ADD(LOG_INT32, delay, &delay)
+LOG_ADD(LOG_UINT32, delay_ctr, &delay_ctr)
 LOG_ADD(LOG_FLOAT, cmd_thrust_N, &cmd_thrust_N)
 LOG_ADD(LOG_FLOAT, cmd_pitch, &cmd_pitch)
 LOG_ADD(LOG_FLOAT, cmd_roll, &cmd_roll)
 LOG_ADD(LOG_FLOAT, ex, &ex)
-LOG_ADD(LOG_FLOAT, evx, &evx)
+// LOG_ADD(LOG_FLOAT, evx, &evx)
 LOG_ADD(LOG_FLOAT, ey, &ey)
-LOG_ADD(LOG_FLOAT, evy, &evy)
+// LOG_ADD(LOG_FLOAT, evy, &evy)
 LOG_ADD(LOG_FLOAT, ez, &ez)
-LOG_ADD(LOG_FLOAT, evz, &evz)
+// LOG_ADD(LOG_FLOAT, evz, &evz)
 LOG_ADD(LOG_FLOAT, alpha, &alpha)
 LOG_ADD(LOG_FLOAT, dalpha, &dalpha)
 LOG_ADD(LOG_FLOAT, beta, &beta)
 LOG_ADD(LOG_FLOAT, dbeta, &dbeta)
+LOG_ADD(LOG_FLOAT, alpha_ref, &alpha_ref)
+LOG_ADD(LOG_FLOAT, dalpha_ref, &dalpha_ref)
+LOG_ADD(LOG_FLOAT, beta_ref, &beta_ref)
+LOG_ADD(LOG_FLOAT, dbeta_ref, &dbeta_ref)
 LOG_ADD(LOG_FLOAT, dt, &dt)
-LOG_ADD(LOG_UINT8, x_Mode, &setPointMode_x)
-LOG_ADD(LOG_UINT8, y_Mode, &setPointMode_y)
-LOG_ADD(LOG_UINT8, z_Mode, &setPointMode_z)
-LOG_ADD(LOG_UINT8, roll_Mode, &setPointMode_roll)
-LOG_ADD(LOG_UINT8, pitch_Mode, &setPointMode_pitch)
-LOG_ADD(LOG_UINT8, yaw_Mode, &setPointMode_yaw)
-LOG_ADD(LOG_UINT8, quat_Mode, &setPointMode_quat)
 LOG_ADD(LOG_UINT8, ctrlMode, &ctrlMode)
-LOG_ADD(LOG_FLOAT, measured_mass, &measured_mass)
-LOG_ADD(LOG_FLOAT, real_mass, &real_mass)
+// LOG_ADD(LOG_FLOAT, measured_mass, &measured_mass)
+// LOG_ADD(LOG_FLOAT, real_mass, &real_mass)
+LOG_ADD(LOG_FLOAT, K1, &K1)
+LOG_ADD(LOG_FLOAT, K2, &K2)
+LOG_ADD(LOG_FLOAT, K3, &K3)
+LOG_ADD(LOG_FLOAT, K4, &K4)
+LOG_ADD(LOG_FLOAT, K5, &K5)
+LOG_ADD(LOG_FLOAT, K6, &K6)
+LOG_ADD(LOG_FLOAT, K7, &K7)
+LOG_ADD(LOG_FLOAT, K8, &K8)
 LOG_GROUP_STOP(Lqr2)
