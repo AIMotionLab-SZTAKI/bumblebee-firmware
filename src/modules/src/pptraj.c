@@ -550,4 +550,5 @@ void piecewise_plan_7th_order_no_jerk(struct piecewise_traj *pp, float duration,
 
 PARAM_GROUP_START(pptraj)
 PARAM_ADD(PARAM_UINT8, traj_mode_drone, &traj_mode_drone)
+PARAM_ADD(PARAM_FLOAT, payload_mass, &mL)
 PARAM_GROUP_STOP(pptraj)

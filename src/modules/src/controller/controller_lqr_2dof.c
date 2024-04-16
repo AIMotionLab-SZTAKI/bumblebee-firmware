@@ -12,7 +12,39 @@ LQR payload stabilizing controller.
 #include "controller_lqr_2dof.h"
 #include "pm.h"
 #include "stdlib.h"
+#include "mem.h"
 
+#define LQR_N 240 // 30kbyte=15360 uint16 param
+#define INT16_LQR_SCALING 32766
+
+static uint32_t duration = 0;
+float K_lim_memory[128+1]; //1 = 4 bytes for checksum
+int16_t K_memory[LQR_N*64+2]; //2 = 4 bytes for checksum
+
+static uint32_t handleMemGetSize(void) {return sizeof(K_memory);}
+static bool handleMemRead(const uint32_t memAddr, const uint8_t readLen, uint8_t* buffer);
+static bool handleMemWrite(const uint32_t memAddr, const uint8_t writeLen, const uint8_t* buffer);
+static const MemoryHandlerDef_t memDef = {
+  .type = MEM_TYPE_LQR,
+  .getSize = handleMemGetSize,
+  .read = handleMemRead,
+  .write = handleMemWrite,
+};
+
+static uint32_t handleBoundsGetSize(void) {return sizeof(K_lim_memory);}
+static bool handleBoundsRead(const uint32_t memAddr, const uint8_t readLen, uint8_t* buffer);
+static bool handleBoundsWrite(const uint32_t memAddr, const uint8_t writeLen, const uint8_t* buffer);
+static const MemoryHandlerDef_t memDefBounds = {
+  .type = MEM_TYPE_LQR_BOUNDS,
+  .getSize = handleBoundsGetSize,
+  .read = handleBoundsRead,
+  .write = handleBoundsWrite,
+};
+
+void lqr2RegisterMemoryHandler(void) {
+  memoryRegisterHandler(&memDef);
+  memoryRegisterHandler(&memDefBounds);
+}
 
 // Logging variables
 
@@ -28,6 +60,7 @@ static struct quat q;
 static float drone_mass = 0.625;
 static float payload_mass = 0.05;
 static float rod_length_safety = 5.0;
+static float rod_length = 0.52;
 
 // static float real_mass = 0.625;
 
@@ -56,13 +89,15 @@ static poseMeasurement_t load_pose;
 static struct vec load_vel;
 static struct vec load_rpy;
 static struct vec load_ang_vel;
+static struct vec load_pos_error;
 
 static float average_weight_pos = 0.5;
 static float average_weight_att = 0.4;
 
 static const state_t* cur_state;
 
-static float K1, K2, K3, K4, K5, K6, K7, K8; // only for logging 
+static float K1, K2, K3, K4, K5, K6, K7, K8; // only for logging
+static uint16_t hook_control_on;
 
 void setLqr2DofParams(float params[], int param_num, uint16_t timestamp) {
   for (int i=0; i<4; i++) {
@@ -145,6 +180,37 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
       return;
     }
 
+  traj_timestamp = setpoint->t_traj;
+  // Compute the current LQR gain matrix by linear interpolation between adjacent values,
+  // Then uncompress the compressed matrix using the bounds in K_lim_memory
+  float param_progress = (float)traj_timestamp / (float)duration * LQR_N;
+  int16_t ta = (int16_t)param_progress * 64;
+  int16_t tb = ta + 64;
+  for (int i=0; i<4; i++) {
+    for (int j=0; j<16; j++) {
+      float wa = (param_progress - (float)ta / 64.0f) / LQR_N;
+      float K_elem_normed =  wa * (float)K_memory[2 + ta + 16*i + j] + (1-wa) * (float)K_memory[2 + tb + 16*i + j]; //2+... because of crc
+      float K_lb = K_lim_memory[1+16*i+j]; //1+... because of crc
+      float K_ub = K_lim_memory[1+64 + 16*i+j]; //1+... because of crc
+      K[i][j] = (K_ub - K_lb) / 2 * K_elem_normed / (float)INT16_LQR_SCALING + (K_ub + K_lb) / 2;
+    }
+  }
+
+  delay = (int32_t)traj_timestamp - (int32_t)K_timestamp;  
+  if (setpoint->mode.z == modeDisable) {
+    delay = 0;
+  }
+  uint32_t delay_ctr_max = ATTITUDE_RATE * max_delay_time_ms / 1000;
+  if (abs(delay) > max_delay) {
+    delay_ctr++;
+    if (delay_ctr > delay_ctr_max && !duration) {
+      forceControllerType(ControllerTypeGeom);
+    }
+  } else {
+    delay_ctr=0;
+  }
+
+
   cur_state = state;
 
   if (payload_mass < 0.0f) {
@@ -157,11 +223,11 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
   K1 = K[0][2];
   K2 = K[0][5];
   K3 = K[1][1];
-  K4 = K[1][4];
-  K5 = K[1][6];
+  K4 = K[1][12];
+  K5 = K[1][14];
   K6 = K[1][9];
-  K7 = K[2][0];
-  K8 = K[2][3];
+  K7 = K[2][13];
+  K8 = K[2][15];
 
   //Enter force-torque control
   control->controlMode = controlModeForceTorque;
@@ -184,20 +250,9 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
   dalpha_ref = setpoint->dalpha;
   dbeta_ref = setpoint->dbeta;
 
-  traj_timestamp = setpoint->t_traj;
-  delay = (int32_t)traj_timestamp - (int32_t)K_timestamp;  
-  if (setpoint->mode.z == modeDisable) {
-    delay = 0;
-  }
-  uint32_t delay_ctr_max = ATTITUDE_RATE * max_delay_time_ms / 1000;
-  if (abs(delay) > max_delay) {
-    delay_ctr++;
-    if (delay_ctr > delay_ctr_max) {
-      forceControllerType(ControllerTypeGeom);
-    }
-  } else {
-    delay_ctr=0;
-  }
+  struct vec load_pos_ref = vsub(mkvec(setpoint->position.x, setpoint->position.y, setpoint->position.z), mvmul(quat2rotmat(rpy2quat(mkvec(alpha_ref, beta_ref, 0))), mkvec(0, 0, rod_length)));
+  load_pos_error = vsub(mkvec(load_pose.x, load_pose.y, load_pose.z), load_pos_ref);
+
   float wx = radians(sensors->gyro.x);
   float wy = radians(sensors->gyro.y);
   float wz = radians(sensors->gyro.z);
@@ -245,8 +300,10 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
   cmd_yaw = setpoint->torques.z;
 
   int num_states_to_control = 16;
+  hook_control_on = 1;
   if (state->position.z < rod_length_safety) {
     num_states_to_control = 12;
+    hook_control_on = 0;
   }
   for (int i=0; i < num_states_to_control; i++) {
     cmd_thrust_N += - K[0][i] * err_arr[i];
@@ -274,6 +331,47 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
   }
 }
 
+static bool handleMemRead(const uint32_t memAddr, const uint8_t readLen, uint8_t* buffer) {
+  bool result = false;
+  if (memAddr + readLen <= sizeof(K_memory)) {
+    uint8_t* K_memory_uint8 = (uint8_t*)(K_memory);
+    memcpy(buffer, K_memory_uint8+memAddr, readLen);
+    result = true;
+  }
+
+  return result;
+}
+
+static bool handleMemWrite(const uint32_t memAddr, const uint8_t writeLen, const uint8_t* buffer) {
+  bool result = false;
+  if ((memAddr + writeLen) <= sizeof(K_memory)) {
+    uint8_t* K_memory_uint8 = (uint8_t*)(K_memory);
+    memcpy(K_memory_uint8+memAddr, buffer, writeLen);
+    result = true;
+  }
+  return result;
+}
+
+static bool handleBoundsRead(const uint32_t memAddr, const uint8_t readLen, uint8_t* buffer) {
+  bool result = false;
+  if (memAddr + readLen <= sizeof(K_lim_memory)) {
+    uint8_t* K_lim_memory_uint8 = (uint8_t*)K_lim_memory;
+    memcpy(buffer, K_lim_memory_uint8+memAddr, readLen);
+    result = true;
+  }
+
+  return result;
+}
+
+static bool handleBoundsWrite(const uint32_t memAddr, const uint8_t writeLen, const uint8_t* buffer) {
+  bool result = false;
+  if ((memAddr + writeLen) <= sizeof(K_lim_memory)) {
+    uint8_t* K_lim_memory_uint8 = (uint8_t*)K_lim_memory;
+    memcpy(K_lim_memory_uint8 + memAddr, buffer, writeLen);
+    result = true;
+  }
+  return result;
+}
 
 PARAM_GROUP_START(Lqr2)
 PARAM_ADD(PARAM_FLOAT, drone_mass, &drone_mass)
@@ -285,6 +383,8 @@ PARAM_ADD(PARAM_FLOAT, batt_comp_b, &batt_comp_b)
 PARAM_ADD(PARAM_FLOAT, w_pos, &average_weight_pos)
 PARAM_ADD(PARAM_FLOAT, w_att, &average_weight_att)
 PARAM_ADD(PARAM_FLOAT, rod_length_safety, &rod_length_safety)
+PARAM_ADD(PARAM_FLOAT, rod_length, &rod_length)
+PARAM_ADD(PARAM_UINT32, duration, &duration)
 PARAM_GROUP_STOP(Lqr2)
 
 
@@ -302,6 +402,9 @@ LOG_ADD(LOG_FLOAT, ey, &ey)
 // LOG_ADD(LOG_FLOAT, evy, &evy)
 LOG_ADD(LOG_FLOAT, ez, &ez)
 // LOG_ADD(LOG_FLOAT, evz, &evz)
+LOG_ADD(LOG_FLOAT, ex_load, &load_pos_error.x)
+LOG_ADD(LOG_FLOAT, ey_load, &load_pos_error.y)
+LOG_ADD(LOG_FLOAT, ez_load, &load_pos_error.z)
 LOG_ADD(LOG_FLOAT, alpha, &alpha)
 LOG_ADD(LOG_FLOAT, dalpha, &dalpha)
 LOG_ADD(LOG_FLOAT, beta, &beta)
@@ -322,4 +425,5 @@ LOG_ADD(LOG_FLOAT, K5, &K5)
 LOG_ADD(LOG_FLOAT, K6, &K6)
 LOG_ADD(LOG_FLOAT, K7, &K7)
 LOG_ADD(LOG_FLOAT, K8, &K8)
+LOG_ADD(LOG_UINT16, hook_control_on, &hook_control_on)
 LOG_GROUP_STOP(Lqr2)

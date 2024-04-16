@@ -242,20 +242,23 @@ static bool all_true(bool* array, int len) {
   }
   return true;
 }
-static uint16_t lqr_timestamp;
+static uint32_t lqr_timestamp;
 static uint16_t lqr_param_num;
 static uint8_t debug_var = 0;
 static uint8_t data_idx = 0;
 static bool lqr_params_arrived[11] = {false};
 static float32_t K[64] = {0.0f};
+static uint32_t lqr_packet_t = 0;
 
-static void handleLqrParamsPacket(CRTPPacket* pk) {
+static void handleLqrParamsPacket(CRTPPacket* pk) {  
+  struct data_lqr_params data = *((struct data_lqr_params*)pk->data);
+  lqr_packet_t = data.timestamp;
+  data_idx = data.idx;
   ControllerType current_controller = controllerGetType();  
   if (!(current_controller == ControllerTypeLqr || current_controller == ControllerTypeLqr2Dof)) {
     return; // wrong controller -> disregard
   }
-  struct data_lqr_params data = *((struct data_lqr_params*)pk->data);
-  data_idx = data.idx;
+  
   if (data.timestamp < lqr_timestamp) {
     return; //we got some leftover parameter set from a previous K -> disregard
   }
@@ -512,4 +515,5 @@ LOG_GROUP_STOP(load_pose)
 LOG_GROUP_START(lqr_debug)
 LOG_ADD(LOG_UINT8, debug_var, &debug_var)
 LOG_ADD(LOG_UINT8, data_idx, &data_idx)
+LOG_ADD(LOG_UINT32, lqr_packet_t, &lqr_packet_t)
 LOG_GROUP_STOP(lqr_debug)

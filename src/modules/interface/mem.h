@@ -43,6 +43,8 @@ typedef enum {
   MEM_TYPE_APP      = 0x18,
   MEM_TYPE_DECK_MEM = 0x19,
   MEM_TYPE_FENCE    = 0x40,
+  MEM_TYPE_LQR      = 0x50,
+  MEM_TYPE_LQR_BOUNDS=0x51,
 } MemoryType_t;
 
 #define MEMORY_SERIAL_LENGTH 8

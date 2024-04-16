@@ -38,7 +38,7 @@
 /**
  * Size of the memory segment that can store light programs.
  */
-#define LIGHT_PROGRAM_MEMORY_SIZE 4096
+#define LIGHT_PROGRAM_MEMORY_SIZE 128
 
 #define NUM_LIGHT_PROGRAM_DEFINITIONS 10
 

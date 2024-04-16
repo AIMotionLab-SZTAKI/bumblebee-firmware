@@ -9,6 +9,7 @@
 void controllerLqr2DofInit(void);
 bool controllerLqr2DofTest(void);
 void controllerLqr2DofReset(void);
+void lqr2RegisterMemoryHandler(void);
 void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
                                          const sensorData_t *sensors,
                                          const state_t *state,

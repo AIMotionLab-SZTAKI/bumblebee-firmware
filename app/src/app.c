@@ -39,6 +39,7 @@
 #include "gcs_light_effects.h"
 #include "light_program.h"
 #include "preflight.h"
+#include "controller_lqr_2dof.h"
 
 #define DRONE_SHOW_APP_STACKSIZE 300
 
@@ -61,6 +62,9 @@ void appInit()
 
   // The fence module also has to be initialized here for the same reasons
   fenceInit();
+
+  // The lqr controller also has to be initialized here for the same reasons
+  lqr2RegisterMemoryHandler();
 
   STATIC_MEM_TASK_CREATE(appTask, appTask, "app", NULL, CONFIG_APP_PRIORITY);
 
