@@ -119,7 +119,9 @@ void setLoadState2Dof(const poseMeasurement_t *measurement, uint32_t dt_ms)
   q.y = load_pose.quat.q1;
   q.z = load_pose.quat.q2;
   q.w = load_pose.quat.q3;
-  struct vec load_rpy_new = quat2rpy(q);
+  struct vec load_rpy_body = quat2rpy(q);
+  float yaw = load_rpy_body.z;
+  struct vec load_rpy_new = quat2rpy(qqmul(rpy2quat(mkvec(0, 0, -yaw)), q));
   load_vel.x = (1 - average_weight_pos) * load_vel.x + average_weight_pos * (measurement->x - load_pose.x) / dt;
   load_vel.y = (1 - average_weight_pos) * load_vel.y + average_weight_pos * (measurement->y - load_pose.y) / dt;
   load_vel.z = (1 - average_weight_pos) * load_vel.z + average_weight_pos * (measurement->z - load_pose.z) / dt;
