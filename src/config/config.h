@@ -103,6 +103,9 @@
 #define CRTP_SRV_TASK_PRI       0
 #define PLATFORM_SRV_TASK_PRI   0
 
+// Communication task priority
+#define COMMUNICATION_TASK_PRI 2
+
 // Not compiled
 #if 0
   #define INFO_TASK_PRI           2
@@ -161,6 +164,9 @@
 #define APP_TASK_NAME           "APP"
 #define FLAPPERDECK_TASK_NAME   "FLAPPERDECK"
 
+// Communication task name
+#define COMMUNICATION_TASK_NAME "COMMUNICATION"
+
 
 //Task stack sizes
 #define SYSTEM_TASK_STACKSIZE         (2* configMINIMAL_STACK_SIZE)
@@ -174,7 +180,7 @@
 #define MEM_TASK_STACKSIZE            (2 * configMINIMAL_STACK_SIZE)
 #define PARAM_TASK_STACKSIZE          (2 * configMINIMAL_STACK_SIZE)
 #define SENSORS_TASK_STACKSIZE        (2 * configMINIMAL_STACK_SIZE)
-#define STABILIZER_TASK_STACKSIZE     (5 * configMINIMAL_STACK_SIZE) // increased from 3 to 5 after some crashes
+#define STABILIZER_TASK_STACKSIZE     (3 * configMINIMAL_STACK_SIZE)
 #define NRF24LINK_TASK_STACKSIZE      configMINIMAL_STACK_SIZE
 #define ESKYLINK_TASK_STACKSIZE       configMINIMAL_STACK_SIZE
 #define SYSLINK_TASK_STACKSIZE        (2 * configMINIMAL_STACK_SIZE)
@@ -206,6 +212,9 @@
 #define KALMAN_TASK_STACKSIZE         (3 * configMINIMAL_STACK_SIZE)
 #define FLAPPERDECK_TASK_STACKSIZE    (2 * configMINIMAL_STACK_SIZE)
 #define ERROR_UKF_TASK_STACKSIZE      (4 * configMINIMAL_STACK_SIZE)
+
+// Communication task stacksize
+#define COMMUNICATION_TASK_STACKSIZE (3 * configMINIMAL_STACK_SIZE)
 
 //The radio channel. From 0 to 125
 #define RADIO_CHANNEL 80

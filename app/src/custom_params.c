@@ -82,6 +82,7 @@ static const customParamTableEntry_t params[] = {
 #ifdef CONFIG_PLATFORM_BOLT
   /* Larger Bolt-bases show drones are okay with a lower thrust base */
   { "posCtlPid", "thrustBase", 17000, TYPE_INT },
+  { "posCtlPid", "zKi", 0},
 
   /* Currently we always use single-cell batteries so the voltage thresholds
    * need to be adjusted */

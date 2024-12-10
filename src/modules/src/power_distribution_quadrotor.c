@@ -151,7 +151,7 @@ void powerDistribution(const control_t *control, motors_thrust_uncapped_t* motor
 void powerDistributionCap(const motors_thrust_uncapped_t* motorThrustBatCompUncapped, motors_thrust_pwm_t* motorPwm)
 {
   // const int32_t maxAllowedThrust = UINT16_MAX;
-  const int32_t maxAllowedThrust = 40000;
+  const int32_t maxAllowedThrust = 30000;
 
   // Find highest thrust
   int32_t highestThrustFound = 0;

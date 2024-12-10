@@ -59,6 +59,7 @@
 
 #include "controller_lqr_1dof.h"
 #include "controller_lqr_2dof.h"
+#include "communication.h"
 
 static bool isInit;
 static bool emergencyStop = false;
@@ -188,6 +189,7 @@ void stabilizerInit(StateEstimatorType estimator)
   sensorsInit();
   stateEstimatorInit(estimator);
   controllerInit(ControllerTypeAutoSelect);
+  communicationInit();
   powerDistributionInit();
   motorsInit(platformConfigGetMotorMapping());
   collisionAvoidanceInit();

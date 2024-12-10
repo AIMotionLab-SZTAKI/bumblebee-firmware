@@ -28,6 +28,7 @@
 
 #include "stabilizer_types.h"
 
+float getThrustPwm(float thrust_N);
 void controllerPidInit(void);
 bool controllerPidTest(void);
 void controllerPid(control_t *control, const setpoint_t *setpoint,
