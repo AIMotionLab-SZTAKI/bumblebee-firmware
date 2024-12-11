@@ -450,10 +450,11 @@ void handle_control_packet(uart_packet *packet, float* thrustDesired, float* rol
   memcpy(yawRateDesired, &packet->payload[ptr], sizeof(*yawRateDesired));
 }
 
-void handle_forwarded_packet(uart_packet *packet, float* thrustDesired, float* rollRateDesired, float* pitchRateDesired, float* yawRateDesired) {
+void handle_forwarded_packet(uart_packet *packet, float* thrustDesired, float* rollRateDesired, 
+                             float* pitchRateDesired, float* yawRateDesired, float* status) {
   unsigned long ptr = 0;
-
-  ptr += sizeof(*thrustDesired); // timestamp sent as a float, not used for now
+  memcpy(status, &packet->payload[ptr], sizeof(*status));
+  ptr += sizeof(*status); // status flag
   memcpy(thrustDesired, &packet->payload[ptr], sizeof(*thrustDesired));
   ptr += sizeof(*thrustDesired);
   memcpy(rollRateDesired, &packet->payload[ptr], sizeof(*rollRateDesired));

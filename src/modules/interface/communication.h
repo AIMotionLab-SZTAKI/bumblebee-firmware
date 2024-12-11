@@ -39,4 +39,5 @@ bool communicationTest(void);
 
 void handle_control_packet(uart_packet *packet, float* thrustDesired, float* rollRateDesired, float* pitchRateDesired, float* yawRateDesired);
 
-void handle_forwarded_packet(uart_packet *packet, float* thrustDesired, float* rollRateDesired, float* pitchRateDesired, float* yawRateDesired);
+void handle_forwarded_packet(uart_packet *packet, float* thrustDesired, float* rollRateDesired, 
+                             float* pitchRateDesired, float* yawRateDesired, float* status);

@@ -26,6 +26,8 @@ static attitude_t rateDesired;
 static attitude_t rateDesired_ext;
 static float actuatorThrust;
 static float thrust_ext;
+static float status_ext;  // status flag of external control input
+static int fail_counter;  // number of subsequent invalid external control inputs 
 
 static float cmd_thrust;
 static float cmd_roll;
@@ -148,7 +150,12 @@ void controllerPid(control_t *control, const setpoint_t *setpoint,
         if (receiverPacket.serviceType == CONTROL_PACKET) {
           handle_control_packet(&receiverPacket, &thrust_ext, &rateDesired_ext.roll, &rateDesired_ext.pitch, &rateDesired_ext.yaw);
         } else if (receiverPacket.serviceType == FORWARDED_CONTROL_PACKET) {
-          handle_forwarded_packet(&receiverPacket, &thrust_ext, &rateDesired_ext.roll, &rateDesired_ext.pitch, &rateDesired_ext.yaw);
+          handle_forwarded_packet(&receiverPacket, &thrust_ext, &rateDesired_ext.roll, &rateDesired_ext.pitch, &rateDesired_ext.yaw, &status_ext);
+          if (status_ext > 0.5f) { // invalid control input
+            fail_counter += 1;
+          } else {
+            fail_counter = 0;
+          }
         }
         // convert thrust from N to PWM
         supplyVoltage = pmGetBatteryVoltage();  
@@ -156,7 +163,12 @@ void controllerPid(control_t *control, const setpoint_t *setpoint,
         float thrust_battery_corrected = thrust_ext * mass_ratio;
         thrust_ext = getThrustPwm(thrust_battery_corrected);
       } else if (external_control) { // communication not successful but still trying to control externally
-        stabilizerSetEmergencyStop();  // TODO: just disable uart communication and find a safe setpoint for PID
+        fail_counter += 15;
+      }
+
+      if (fail_counter >= 20) {
+        stabilizerSetEmergencyStop();  // switching to emergency mode
+        // maybe later we could just disable uart communication and find a safe setpoint for PID
       }
     }
   }
