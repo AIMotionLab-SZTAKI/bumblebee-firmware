@@ -58,7 +58,7 @@ static uint8_t ctrlMode;
 static struct quat q;
 
 static float drone_mass = 0.625;
-static float payload_mass = 0.05;
+static float payload_mass = 0.02;  // default: hook mass
 static float rod_length_safety = 5.0;
 static float rod_length = 0.52;
 
@@ -98,6 +98,7 @@ static const state_t* cur_state;
 
 static float K1, K2, K3, K4, K5, K6, K7, K8; // only for logging
 static uint16_t hook_control_on;
+static uint8_t lti_mode = 1;
 
 void setLqr2DofParams(float params[], int param_num, uint16_t timestamp) {
   for (int i=0; i<4; i++) {
@@ -143,18 +144,18 @@ void controllerLqr2DofReset(void)
   }
   K[0][2] = 4.3746;
   K[0][5] = 2.739;
-  K[1][1] = -0.2899;
-  K[1][4] = -0.2343;
-  K[1][6] = 0.8058;
-  K[1][9] = 0.1073;
-  K[1][12] = -0.0302;
-  K[1][14] = 0.024;
-  K[2][0] = 0.2853;
-  K[2][3] = 0.2305;
-  K[2][7] = 0.7922;
-  K[2][10] = 0.1054;
-  K[2][13] = -0.0296;
-  K[2][15] = 0.0236;
+  K[1][1] = -0.9053;
+  K[1][4] = -0.4689;
+  K[1][6] = 1.0786;
+  K[1][9] = 0.1111;
+  K[1][12] = 0.0453;
+  K[1][14] = 0.021;
+  K[2][0] = 0.8909;
+  K[2][3] = 0.4612;
+  K[2][7] = 1.06;
+  K[2][10] = 0.1091;
+  K[2][13] = 0.0447;
+  K[2][15] = 0.0206;
   K[3][8] = 0.0372;
   K[3][11] = 0.1188;
 
@@ -182,19 +183,28 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
       return;
     }
 
+  if (!duration) { // LTV-LQR gains not yet received
+    lti_mode = 1;
+  } else {
+    lti_mode = 0;
+  }
+
   traj_timestamp = setpoint->t_traj;
-  // Compute the current LQR gain matrix by linear interpolation between adjacent values,
-  // Then uncompress the compressed matrix using the bounds in K_lim_memory
-  float param_progress = (float)traj_timestamp / (float)duration * LQR_N;
-  int16_t ta = (int16_t)param_progress * 64;
-  int16_t tb = ta + 64;
-  for (int i=0; i<4; i++) {
-    for (int j=0; j<16; j++) {
-      float wa = (param_progress - (float)ta / 64.0f) / LQR_N;
-      float K_elem_normed =  wa * (float)K_memory[2 + ta + 16*i + j] + (1-wa) * (float)K_memory[2 + tb + 16*i + j]; //2+... because of crc
-      float K_lb = K_lim_memory[1+16*i+j]; //1+... because of crc
-      float K_ub = K_lim_memory[1+64 + 16*i+j]; //1+... because of crc
-      K[i][j] = (K_ub - K_lb) / 2 * K_elem_normed / (float)INT16_LQR_SCALING + (K_ub + K_lb) / 2;
+
+  if (!lti_mode) {
+    // Compute the current LQR gain matrix by linear interpolation between adjacent values,
+    // Then uncompress the compressed matrix using the bounds in K_lim_memory
+    float param_progress = (float)traj_timestamp / (float)duration * LQR_N;
+    int16_t ta = (int16_t)param_progress * 64;
+    int16_t tb = ta + 64;
+    for (int i=0; i<4; i++) {
+      for (int j=0; j<16; j++) {
+        float wa = (param_progress - (float)ta / 64.0f) / LQR_N;
+        float K_elem_normed =  wa * (float)K_memory[2 + ta + 16*i + j] + (1-wa) * (float)K_memory[2 + tb + 16*i + j]; //2+... because of crc
+        float K_lb = K_lim_memory[1+16*i+j]; //1+... because of crc
+        float K_ub = K_lim_memory[1+64 + 16*i+j]; //1+... because of crc
+        K[i][j] = (K_ub - K_lb) / 2 * K_elem_normed / (float)INT16_LQR_SCALING + (K_ub + K_lb) / 2;
+      }
     }
   }
 
@@ -205,7 +215,7 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
   uint32_t delay_ctr_max = ATTITUDE_RATE * max_delay_time_ms / 1000;
   if (abs(delay) > max_delay) {
     delay_ctr++;
-    if (delay_ctr > delay_ctr_max && !duration) {
+    if (delay_ctr > delay_ctr_max && !duration && !lti_mode) {
       forceControllerType(ControllerTypeGeom);
     }
   } else {
@@ -217,8 +227,8 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
 
   if (payload_mass < 0.0f) {
     payload_mass = 0.0f;
-  } else if (payload_mass > 0.1f) {
-    payload_mass = 0.1f;
+  } else if (payload_mass > 0.15f) {
+    payload_mass = 0.15f;
   }
 
   // Only for logging
@@ -284,22 +294,18 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
   }
   err_arr[8] = eyaw;
 
-  /*
-  // measured mass
-  measured_mass = cmd_thrust_N / (GRAVITY_MAGNITUDE) / mass_ratio;
-  if (measured_mass > 0.7f){
-    real_mass = drone_mass + payload_mass;
+  if (!lti_mode) {
+    // Compute control inputs: u = -K * (x - x_r) + u_r
+    cmd_thrust_N = setpoint->thrust * mass_ratio;
+    cmd_roll = setpoint->torques.x;
+    cmd_pitch = setpoint->torques.y;
+    cmd_yaw = setpoint->torques.z;
+  } else { // LTI mode
+    cmd_thrust_N = (drone_mass + payload_mass) * GRAVITY_MAGNITUDE * mass_ratio;
+    cmd_roll = 0.0f;
+    cmd_pitch = 0.0f;
+    cmd_yaw = 0.0f; 
   }
-  else if (measured_mass < 0.67f) {
-    real_mass = drone_mass;
-  }
-  */
-
-  // Compute control inputs: u = -K * (x - x_r) + u_r
-  cmd_thrust_N = setpoint->thrust * mass_ratio;
-  cmd_roll = setpoint->torques.x;
-  cmd_pitch = setpoint->torques.y;
-  cmd_yaw = setpoint->torques.z;
 
   int num_states_to_control = 16;
   hook_control_on = 1;
@@ -428,4 +434,5 @@ LOG_ADD(LOG_FLOAT, K6, &K6)
 LOG_ADD(LOG_FLOAT, K7, &K7)
 LOG_ADD(LOG_FLOAT, K8, &K8)
 LOG_ADD(LOG_UINT16, hook_control_on, &hook_control_on)
+LOG_ADD(LOG_UINT8, lti_mode, &lti_mode)
 LOG_GROUP_STOP(Lqr2)
