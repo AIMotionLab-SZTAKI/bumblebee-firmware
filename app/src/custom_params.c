@@ -45,10 +45,10 @@ static const customParamTableEntry_t params[] = {
   /* Attitude rate controller PID tuning */
 #ifdef CONFIG_PLATFORM_BOLT
   { "pid_rate", "roll_kp",   70 },
-  { "pid_rate", "roll_ki",  200 },
+  { "pid_rate", "roll_ki",  0 },
   { "pid_rate", "roll_kd",    2 },
   { "pid_rate", "pitch_kp",  70 },
-  { "pid_rate", "pitch_ki", 200 },
+  { "pid_rate", "pitch_ki", 0 },
   { "pid_rate", "pitch_kd",   2 },
 #else
   { "pid_rate", "roll_kp",  220 },

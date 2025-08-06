@@ -34,6 +34,9 @@
 #include "config.h"
 #include "math.h"
 
+// PID controller for adaptive center of mass alignment
+#include "controller_pid.h"
+
 #ifndef CONFIG_MOTORS_DEFAULT_IDLE_THRUST
 #  define DEFAULT_IDLE_THRUST 0
 #else
@@ -53,6 +56,9 @@ static float angVelToThrust = 9.3945e-7f;
 // torque = a/c * signed_sum(thrust) + b/c
 static float thrustToTorqueA = 5.5939e-7f;
 static float thrustToTorqueB = -0.4785f;
+
+static float com_shift_x = 0.0f;
+static float com_shift_y = 0.0f;
 
 int powerDistributionMotorType(uint32_t id)
 {
@@ -87,26 +93,38 @@ static void powerDistributionLegacy(const control_t *control, motors_thrust_unca
   int16_t r = control->roll / 2.0f;
   int16_t p = control->pitch / 2.0f;
 
-  motorThrustUncapped->motors.m1 = control->thrust - r + p + control->yaw;
-  motorThrustUncapped->motors.m2 = control->thrust - r - p - control->yaw;
-  motorThrustUncapped->motors.m3 = control->thrust + r - p + control->yaw;
-  motorThrustUncapped->motors.m4 = control->thrust + r + p - control->yaw;
+  getComShift(&com_shift_x, &com_shift_y);
+  const float arm = 0.707106781f * armLength;
+  float d1 = (arm + com_shift_x - com_shift_y) / arm;
+  float d2 = (arm - com_shift_x - com_shift_y) / arm;
+  float d3 = (arm - com_shift_x + com_shift_y) / arm;
+  float d4 = (arm + com_shift_x + com_shift_y) / arm;
+  motorThrustUncapped->motors.m1 = (uint16_t)(d1 * (float)control->thrust) - r + p + control->yaw;
+  motorThrustUncapped->motors.m2 = (uint16_t)(d2 * (float)control->thrust) - r - p - control->yaw;
+  motorThrustUncapped->motors.m3 = (uint16_t)(d3 * (float)control->thrust) + r - p + control->yaw;
+  motorThrustUncapped->motors.m4 = (uint16_t)(d4 * (float)control->thrust) + r + p - control->yaw;
 }
 
 static void powerDistributionForceTorque(const control_t *control, motors_thrust_uncapped_t* motorThrustUncapped) {
   static float motorForces[STABILIZER_NR_OF_MOTORS];
 
+  getComShift(&com_shift_x, &com_shift_y);
   const float arm = 0.707106781f * armLength;
+  float d1 = (arm + com_shift_x - com_shift_y) / arm;
+  float d2 = (arm - com_shift_x - com_shift_y) / arm;
+  float d3 = (arm - com_shift_x + com_shift_y) / arm;
+  float d4 = (arm + com_shift_x + com_shift_y) / arm;
+
   const float rollPart = 0.25f / arm * control->torqueX;
   const float pitchPart = 0.25f / arm * control->torqueY;
   const float thrustPart = 0.25f * control->thrustSi; // N (per rotor)
   int yaw_sgn = (control->torqueZ > 0) - (control->torqueZ < 0);
   const float yawPart = 0.25f * (control->torqueZ - yaw_sgn * thrustToTorqueB) * angVelToThrust / thrustToTorqueA;
 
-  motorForces[0] = thrustPart - rollPart - pitchPart - yawPart;
-  motorForces[1] = thrustPart - rollPart + pitchPart + yawPart;
-  motorForces[2] = thrustPart + rollPart + pitchPart - yawPart;
-  motorForces[3] = thrustPart + rollPart - pitchPart + yawPart;
+  motorForces[0] = d1 * thrustPart - rollPart - pitchPart - yawPart;
+  motorForces[1] = d2 * thrustPart - rollPart + pitchPart + yawPart;
+  motorForces[2] = d3 * thrustPart + rollPart + pitchPart - yawPart;
+  motorForces[3] = d4 * thrustPart + rollPart - pitchPart + yawPart;
 
   // thrust = a * PWM^2 + b * PWM + c
   // maybe we shut put this computation somewhere else later

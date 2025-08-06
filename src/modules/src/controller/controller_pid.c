@@ -28,6 +28,8 @@ static float actuatorThrust;
 static float thrust_ext;
 static float status_ext;  // status flag of external control input
 static int fail_counter;  // number of subsequent invalid external control inputs 
+static float com_shift_x = 0.0f;
+static float com_shift_y = 0.0f;
 
 static float cmd_thrust;
 static float cmd_roll;
@@ -98,6 +100,12 @@ static float capAngle(float angle) {
   return result;
 }
 
+
+void getComShift(float* dx, float* dy) {
+  *dx = com_shift_x;
+  *dy = com_shift_y;
+}
+
 void controllerPid(control_t *control, const setpoint_t *setpoint,
                                          const sensorData_t *sensors,
                                          const state_t *state,
@@ -150,7 +158,8 @@ void controllerPid(control_t *control, const setpoint_t *setpoint,
         if (receiverPacket.serviceType == CONTROL_PACKET) {
           handle_control_packet(&receiverPacket, &thrust_ext, &rateDesired_ext.roll, &rateDesired_ext.pitch, &rateDesired_ext.yaw);
         } else if (receiverPacket.serviceType == FORWARDED_CONTROL_PACKET) {
-          handle_forwarded_packet(&receiverPacket, &thrust_ext, &rateDesired_ext.roll, &rateDesired_ext.pitch, &rateDesired_ext.yaw, &status_ext);
+          handle_forwarded_packet(&receiverPacket, &thrust_ext, &rateDesired_ext.roll, &rateDesired_ext.pitch, &rateDesired_ext.yaw, &status_ext,
+                                  &com_shift_x, &com_shift_y);
           if (status_ext > 0.5f) { // invalid control input
             fail_counter += 1;
           } else {

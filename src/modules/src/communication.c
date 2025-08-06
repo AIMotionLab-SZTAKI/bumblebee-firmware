@@ -451,7 +451,8 @@ void handle_control_packet(uart_packet *packet, float* thrustDesired, float* rol
 }
 
 void handle_forwarded_packet(uart_packet *packet, float* thrustDesired, float* rollRateDesired, 
-                             float* pitchRateDesired, float* yawRateDesired, float* status) {
+                             float* pitchRateDesired, float* yawRateDesired, float* status,
+                             float* com_shift_x, float* com_shift_y) {
   unsigned long ptr = 0;
   memcpy(status, &packet->payload[ptr], sizeof(*status));
   ptr += sizeof(*status); // status flag
@@ -462,4 +463,8 @@ void handle_forwarded_packet(uart_packet *packet, float* thrustDesired, float* r
   memcpy(pitchRateDesired, &packet->payload[ptr], sizeof(*pitchRateDesired));
   ptr += sizeof(*pitchRateDesired);
   memcpy(yawRateDesired, &packet->payload[ptr], sizeof(*yawRateDesired));
+  ptr += sizeof(*yawRateDesired);
+  memcpy(com_shift_x, &packet->payload[ptr], sizeof(*com_shift_x));
+  ptr += sizeof(*com_shift_x);
+  memcpy(com_shift_y, &packet->payload[ptr], sizeof(*com_shift_y));
 }
