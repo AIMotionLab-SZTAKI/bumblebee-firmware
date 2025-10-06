@@ -12,6 +12,7 @@
 #include "controller_lqr_2dof.h"
 #include "controller_lqr.h"
 #include "controller_switch.h"
+#include "controller_body_rate.h"
 
 #include "autoconf.h"
 
@@ -38,6 +39,7 @@ static ControllerFcns controllerFunctions[] = {
   {.init = controllerLqr2DofInit, .test = controllerLqr2DofTest, .update = controllerLqr2Dof, .name = "LQR-2Dof"},
   {.init = controllerSwitchInit, .test = controllerSwitchTest, .update = controllerSwitch, .name = "LQR-TO-GEOM"},
   {.init = controllerLqrInit, .test = controllerLqrTest, .update = controllerLqr, .name = "LQR"},
+  {.init = controllerBodyRateInit, .test = controllerBodyRateTest, .update = controllerBodyRate, .name = "Bodyrate"},
 };
 
 
@@ -70,6 +72,8 @@ void controllerInit(ControllerType controller) {
     #define CONTROLLER ControllerTypeLqr
   #elif defined(CONFIG_CONTROLLER_SWITCH)
     #define CONTROLLER ControllerTypeSwitch
+  #elif defined(CONFIG_CONTROLLER_BODY_RATE)
+    #define CONTROLLER ControllerTypeBodyRate
   #else
     #define CONTROLLER ControllerTypeAutoSelect
   #endif

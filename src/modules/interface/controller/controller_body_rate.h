@@ -21,42 +21,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
- * controller.h - Controller interface
+ * controller_pid.h - PID Controller Interface
  */
-#ifndef __CONTROLLER_H__
-#define __CONTROLLER_H__
+#ifndef __CONTROLLER_BODY_RATE_H__
+#define __CONTROLLER_BODY_RATE_H__
 
 #include "stabilizer_types.h"
 
-typedef enum {
-  ControllerTypeAutoSelect,
-  ControllerTypePID,
-  ControllerTypeMellinger,
-  ControllerTypeINDI,
-  ControllerTypeBrescianini,
-  ControllerTypeGeom,
-  ControllerTypeLqr1Dof,
-  ControllerTypeLqr2Dof,
-  ControllerTypeSwitch,
-  ControllerTypeLqr,
-  ControllerTypeBodyRate,
-  ControllerType_COUNT,
-} ControllerType;
-
-void controllerInit(ControllerType controller);
-bool controllerTest(void);
-void controller(control_t *control, const setpoint_t *setpoint,
+void controllerBodyRateInit(void);
+bool controllerBodyRateTest(void);
+void controllerBodyRate(control_t *control, const setpoint_t *setpoint,
                                          const sensorData_t *sensors,
                                          const state_t *state,
                                          const uint32_t tick);
-ControllerType controllerGetType(void);
-const char* controllerGetName();
 
-
-#ifdef CONFIG_CONTROLLER_OOT
-void controllerOutOfTreeInit(void);
-bool controllerOutOfTreeTest(void);
-void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const sensorData_t *sensors, const state_t *state, const uint32_t tick);
-#endif
-
-#endif //__CONTROLLER_H__
+#endif //__CONTROLLER_BODY_RATE_H__
