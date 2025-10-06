@@ -60,4 +60,7 @@ int powerDistributionMotorType(uint32_t id);
  */
 uint16_t powerDistributionStopRatio(uint32_t id);
 
+// set center of mass shift parameters
+void setComShift(float dx, float dy);
+
 #endif //__POWER_DISTRIBUTION_H__

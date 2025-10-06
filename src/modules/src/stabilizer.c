@@ -133,6 +133,10 @@ STATIC_MEM_TASK_ALLOC(stabilizerTask, STABILIZER_TASK_STACKSIZE);
 
 static void stabilizerTask(void* param);
 
+motors_thrust_pwm_t getMotorPwm(){
+  return motorPwm;
+}
+
 static void calcSensorToOutputLatency(const sensorData_t *sensorData)
 {
   uint64_t outTimestamp = usecTimestamp();

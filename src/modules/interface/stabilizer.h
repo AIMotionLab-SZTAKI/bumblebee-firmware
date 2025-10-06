@@ -67,4 +67,6 @@ void stabilizerSetEmergencyStopTimeout(int timeout);
 
 void forceControllerType(ControllerType controller);
 
+motors_thrust_pwm_t getMotorPwm();
+
 #endif /* STABILIZER_H_ */

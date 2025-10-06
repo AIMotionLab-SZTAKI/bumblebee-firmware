@@ -18,6 +18,9 @@
 // Power management to get battery voltage
 #include "pm.h"
 
+// Set center of mass shift externally
+#include "power_distribution.h"
+
 #define ATTITUDE_UPDATE_DT    (float)(1.0f/ATTITUDE_RATE)
 #define COMMUNICATION_RATE RATE_100_HZ
 
@@ -57,7 +60,7 @@ static float pwmToAngVelB = -131.538;
 static float angVelToThrust = 9.3945e-7f;
 
 
-float getThrustPwm(float thrust_N) 
+static float getThrustPwm(float thrust_N) 
 {
   // thrust = a * PWM^2 + b * PWM + c
   const float pwmToThrustA = angVelToThrust * pwmToAngVelA * pwmToAngVelA * UINT16_MAX * UINT16_MAX;
@@ -98,12 +101,6 @@ static float capAngle(float angle) {
   }
 
   return result;
-}
-
-
-void getComShift(float* dx, float* dy) {
-  *dx = com_shift_x;
-  *dy = com_shift_y;
 }
 
 void controllerPid(control_t *control, const setpoint_t *setpoint,
@@ -150,9 +147,8 @@ void controllerPid(control_t *control, const setpoint_t *setpoint,
       float dummy2 = 345.12;
       sendDataUART("T", &actuatorThrust, &dummy1, &dummy2);
       */
-      float dummy1 = 12.34;
-      float dummy2 = 345.12;
-      sendDataUART("F", &actuatorThrust, &dummy1, &dummy2);
+      motors_thrust_pwm_t pwm = getMotorPwm();
+      sendDataUART("F", &pwm.motors.m1, &pwm.motors.m2, &pwm.motors.m3, &pwm.motors.m4);
       uart_packet receiverPacket;
       if (receiveDataUART(&receiverPacket)) {
         if (receiverPacket.serviceType == CONTROL_PACKET) {
@@ -160,6 +156,7 @@ void controllerPid(control_t *control, const setpoint_t *setpoint,
         } else if (receiverPacket.serviceType == FORWARDED_CONTROL_PACKET) {
           handle_forwarded_packet(&receiverPacket, &thrust_ext, &rateDesired_ext.roll, &rateDesired_ext.pitch, &rateDesired_ext.yaw, &status_ext,
                                   &com_shift_x, &com_shift_y);
+          setComShift(com_shift_x, com_shift_y);
           if (status_ext > 0.5f) { // invalid control input
             fail_counter += 1;
           } else {

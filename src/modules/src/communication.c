@@ -338,15 +338,16 @@ void createTrajectoryPacket(uart_packet* packet, va_list* args) {
 }
 
 // Create a packet that is sent back when controls are forwarded from a PC by a Raspberry Pi
-// As of now this only creates a dummy packet with three floats
+// As of now this creates a generic packet with four floats
 void createForwardPacket(uart_packet* packet, va_list* args) {
-  float* dummy_float_1 = va_arg(*args, float*);
-  float* dummy_float_2 = va_arg(*args, float*);
-  float* dummy_float_3 = va_arg(*args, float*);
+  uint16_t* pwm_1 = va_arg(*args, uint16_t*);
+  uint16_t* pwm_2 = va_arg(*args, uint16_t*);
+  uint16_t* pwm_3 = va_arg(*args, uint16_t*);
+  uint16_t* pwm_4 = va_arg(*args, uint16_t*);
 
-  ASSERT(dummy_float_1 != NULL && dummy_float_2 != NULL && dummy_float_3 != NULL);
+  ASSERT(pwm_1 != NULL && pwm_2 != NULL && pwm_3 != NULL && pwm_4 != NULL);
 
-  uint8_t payloadLength = sizeof(*dummy_float_1) + sizeof(*dummy_float_2) + sizeof(*dummy_float_3);
+  uint8_t payloadLength = sizeof(*pwm_1) + sizeof(*pwm_2) + sizeof(*pwm_3) + sizeof(*pwm_4);
   ASSERT(payloadLength <= MAX_PAYLOAD_LENGTH);
 
   packet->start = START_BYTE;
@@ -355,13 +356,16 @@ void createForwardPacket(uart_packet* packet, va_list* args) {
 
   unsigned long ptr = 0;
 
-  memcpy(&packet->payload[ptr], dummy_float_1, sizeof(*dummy_float_1));
-  ptr += sizeof(*dummy_float_1);
+  memcpy(&packet->payload[ptr], pwm_1, sizeof(*pwm_1));
+  ptr += sizeof(*pwm_1);
 
-  memcpy(&packet->payload[ptr], dummy_float_2, sizeof(*dummy_float_2));
-  ptr += sizeof(*dummy_float_2);
+  memcpy(&packet->payload[ptr], pwm_2, sizeof(*pwm_2));
+  ptr += sizeof(*pwm_2);
 
-  memcpy(&packet->payload[ptr], dummy_float_3, sizeof(*dummy_float_3));
+  memcpy(&packet->payload[ptr], pwm_3, sizeof(*pwm_3));
+  ptr += sizeof(*pwm_3);
+
+  memcpy(&packet->payload[ptr], pwm_4, sizeof(*pwm_4));
 
   packet->payload[packet->payloadLength] = calcCrc(packet);
 }
