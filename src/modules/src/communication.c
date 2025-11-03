@@ -423,7 +423,7 @@ bool receiveDataUART(uart_packet *packet) {
   if (commState == CONNECTED) {
      static uart_packet rxUartPacket;
 
-    if (xQueueReceive(rxQueue, &rxUartPacket, M2T(comm_timeout)) == pdTRUE) {
+    if (xQueueReceive(rxQueue, &rxUartPacket, 0) == pdTRUE) {
       xSemaphoreTake(pckDataMutex, portMAX_DELAY);
 
       packet->start = rxUartPacket.start;

@@ -124,8 +124,8 @@ void controllerBodyRate(control_t *control, const setpoint_t *setpoint,
         //float thrust_battery_corrected = thrust_ext * mass_ratio;
         //thrust_ext = getThrustPwm(thrust_battery_corrected);
         thrust_ext *= mass_ratio;
-      } else if (external_control) { // communication not successful but still trying to control externally
-        fail_counter += 15;
+      } else if (external_control) { // communication timeout but still trying to control externally
+        fail_counter += 2;
       }
 
       if (fail_counter >= 20) {
