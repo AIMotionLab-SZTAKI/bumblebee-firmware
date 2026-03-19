@@ -102,7 +102,7 @@ void controllerBodyRate(control_t *control, const setpoint_t *setpoint,
       float dummy2 = 345.12;
       sendDataUART("T", &actuatorThrust, &dummy1, &dummy2);
       */
-      motors_thrust_pwm_t pwm = getMotorPwm();
+      motors_thrust_pwm_t pwm;// = getMotorPwm();
       sendDataUART("F", &pwm.motors.m1, &pwm.motors.m2, &pwm.motors.m3, &pwm.motors.m4);
       uart_packet receiverPacket;
       if (receiveDataUART(&receiverPacket)) {
@@ -125,7 +125,7 @@ void controllerBodyRate(control_t *control, const setpoint_t *setpoint,
         //thrust_ext = getThrustPwm(thrust_battery_corrected);
         thrust_ext *= mass_ratio;
       } else if (external_control) { // communication timeout but still trying to control externally
-        fail_counter += 2;
+        fail_counter += 11;
       }
 
       if (fail_counter >= 20) {
@@ -159,11 +159,15 @@ void controllerBodyRate(control_t *control, const setpoint_t *setpoint,
         diff_part.z = Izz*diff_part.z;
 
         //Torque component relating to angular acceleration
-        struct vec cross = vcross(w, mkvec(Ixx*w.x, Ixx*w.x, Izz*w.z));
+        // struct vec cross = vcross(w, mkvec(Ixx*w.x, Ixx*w.x, Izz*w.z));
         //Torque in each direction [Nm] Uncapped
-        M.x = cross.x - kw * ew.x - diff_part.x;
-        M.y = cross.y - kw * ew.y - diff_part.y;
-        M.z = cross.z - kw * ew.z - diff_part.z;
+        // M.x = cross.x - kw * ew.x - diff_part.x;
+        // M.y = cross.y - kw * ew.y - diff_part.y;
+        // M.z = cross.z - kw * ew.z - diff_part.z;
+
+        M.x = - kw * ew.x;
+        M.y = - kw * ew.y;
+        M.z = - kw * ew.z;
 
     
     //   attitudeControllerCorrectRatePID(sensors->gyro.x, -sensors->gyro.y, sensors->gyro.z,

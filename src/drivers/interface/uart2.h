@@ -56,6 +56,15 @@
 #define UART2_RX_QUEUE_LENGTH 128
 
 /**
+ * @brief Flushes the UART RX stream buffer.
+ *
+ * This function safely resets the RX stream buffer, discarding any
+ * pending data. It is intended to be called when resetting the
+ * communication state to ensure no stale data is processed.
+ */
+void uart2FlushRxBuffer(void);
+
+/**
  * Initialize the UART.
  */
 void uart2Init(const uint32_t baudrate);

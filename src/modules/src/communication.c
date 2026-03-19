@@ -84,7 +84,13 @@ static uint8_t calcCrc(const uart_packet* packet) {
 }
 
 
+static void resetCommunicationState() {  
+  // 1. Perform the flush to clear any stale data from the RX buffer
+  uart2FlushRxBuffer();
 
+  // 2. Set the state machine back to SYNC
+  commState = SYNC;
+}
 
 void handleControlDataPacket(uart_packet *packet) {
   //DEBUG_PRINT("Service type: [CONTROL]\n");
@@ -188,13 +194,13 @@ static void communicationTask(void* param)
 
     if (commState == SYNC) {
 
-      //DEBUG_PRINT("Sending sync bytes\n");
+      DEBUG_PRINT("Sending sync bytes\n");
       uart2SendData(sizeof(SYNC_BYTE), (uint8_t *) &SYNC_BYTE);
       uart2GetDataWithTimeout(1, &syncBuffer, M2T(comm_timeout));
 
       if (syncBuffer == SYNC_BYTE) {
         commState = CONNECTED;
-        //DEBUG_PRINT("Comm state: [CONNECTED]\n");
+        DEBUG_PRINT("Comm state: [CONNECTED]\n");
       }
     }
 
@@ -220,12 +226,14 @@ static void communicationTask(void* param)
       else if (rxPacket.start == DEFAULT_BYTE) {
         DEBUG_PRINT("Bad CRC\n");
         syncBuffer = DEFAULT_BYTE;
-        commState = SYNC;
+        resetCommunicationState();
+        continue;
       }
       else {
         DEBUG_PRINT("Start byte is %X\n", rxPacket.start);
         syncBuffer = DEFAULT_BYTE;
-        commState = SYNC;
+        resetCommunicationState();
+        continue;
       }
       
       if (rxPacket.payloadLength != 0 && commState == CONNECTED) {
@@ -240,7 +248,8 @@ static void communicationTask(void* param)
         if (rxPacket.crc != calculatedCRC) {
           DEBUG_PRINT("Bad CRC.\n");
           syncBuffer = DEFAULT_BYTE;
-          commState = SYNC;
+          resetCommunicationState();
+          continue;
         }
 
         // Handle payload based on the service type
@@ -259,7 +268,7 @@ static void communicationTask(void* param)
 
         default:
           DEBUG_PRINT("Unknown service type.\n");
-          commState = SYNC;
+          resetCommunicationState();
           syncBuffer = DEFAULT_BYTE;
           break;
         }
@@ -271,7 +280,7 @@ static void communicationTask(void* param)
       }
       else {
         syncBuffer = DEFAULT_BYTE;
-        commState = SYNC;
+        resetCommunicationState();
       }
       //TickType_t timeEnd = xTaskGetTickCount();
       //DEBUG_PRINT("Transaction time in ticks: %lu\n", (timeEnd - timeStart));

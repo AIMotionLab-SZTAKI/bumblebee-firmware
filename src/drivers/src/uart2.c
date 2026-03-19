@@ -63,6 +63,20 @@ static EventGroupHandle_t isrEvents;
 static bool hasOverrun = false;
 
 /**
+ * @brief Flushes the UART RX stream buffer.
+ */
+void uart2FlushRxBuffer(void)
+{
+  // xStreamBufferReset is the official, thread-safe FreeRTOS API call
+  // to empty a stream buffer and unblock any task that might be
+  // waiting for data on it.
+  if (isInit && rxStream != NULL)
+  {
+    xStreamBufferReset(rxStream);
+  }
+}
+
+/**
   * Configures the UART DMA. Mainly used for FreeRTOS trace
   * data transfer.
   */

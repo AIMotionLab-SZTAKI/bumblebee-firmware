@@ -44,11 +44,11 @@ static uint32_t idleThrust = DEFAULT_IDLE_THRUST;
 static float armLength = 0.125f; // m;
 
 // ang_vel = a * pwm + b
-static float pwmToAngVelA = 0.065769f;
+static float pwmToAngVelA = 0.065769f;  // 4310.17 / 65535
 static float pwmToAngVelB = -131.538;
 
 // thrust = c * signed_sum(ang_vel^2)
-static float angVelToThrust = 9.3945e-7f;
+static float angVelToThrust = 9.3945e-7f;  // old value: 9.3945e-7f; new value: 8.6584e-7f;
 
 // torque = a/c * signed_sum(thrust) + b/c
 static float thrustToTorqueA = 5.5939e-7f;
