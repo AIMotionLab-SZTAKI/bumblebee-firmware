@@ -38,9 +38,8 @@
 #include "platform_defaults.h"
 #include "pm.h"
 #include "preflight.h"
-#include "system.h"
-#include "stabilizer.h"
 #include "supervisor.h"
+#include "system.h"
 
 #ifdef CONFIG_SHOW_MODE_SILENT
 #  define DEBUG_PRINT(fmt, ...) /* nothing */
@@ -99,8 +98,10 @@ static const char* stateMessages[NUM_STATES] = {
  * should be derived from that. Takeoff duration should not be a #define macro */
 #ifdef CONFIG_SHOW_SMOOTH_TAKEOFF
 #  define TAKEOFF_CORRECTION_FACTOR (2 + 3.0f / 16)
+#  define LANDING_CORRECTION_FACTOR (2 + 3.0f / 16)
 #else
 #  define TAKEOFF_CORRECTION_FACTOR 1.0f
+#  define LANDING_CORRECTION_FACTOR 1.0f
 #endif
 
 static StaticTimer_t timerBuffer;
@@ -239,9 +240,10 @@ bool droneShowIsProbablyAirborne(void) {
 }
 
 bool droneShowIsInTestingMode(void) {
-  /* we are in testing mode if we were explicitly set to be in testing mode or
-   * if a USB cable is plugged in and the drone couldn't fly anyway */
-  return isTesting || !supervisorCanFly();
+  /* Testing mode must be explicitly requested through show.testing.
+   * Implicitly deriving it from supervisorCanFly() can assert stabilizer.stop
+   * during startup and trigger supervisor lock. */
+  return isTesting;
 }
 
 void droneShowRequestLEDRingControlModeEvaluation(void) {
@@ -433,7 +435,7 @@ static void droneShowTimer(xTimerHandle timer) {
 
     case STATE_LANDING_LOW_BATTERY:
       if (crtpCommanderHighLevelIsTrajectoryFinished()) {
-        /* landing finished, let's got to the landed state */
+        /* landing finished, let's go to the landed state */
         setState(STATE_LANDED);
       }
       break;
@@ -443,7 +445,7 @@ static void droneShowTimer(xTimerHandle timer) {
        * a STOP or RESTART command, or we also go back automatically after
        * 30 seconds. Also, we disarm the motors if we have been in the LANDED
        * state for more than five seconds. */
-      if (armingShouldDisarmAutomaticallyAfterLanding() && systemIsArmed() && getSecondsSinceLastStateSwitch() > 5) {
+      if (armingShouldDisarmAutomaticallyAfterLanding() && supervisorIsArmed() && getSecondsSinceLastStateSwitch() > 5) {
         armingForceDisarm();
       }
       if (getSecondsSinceLastStateSwitch() > 30) {
@@ -706,9 +708,10 @@ static bool onEnteredState(show_state_t state, show_state_t oldState) {
     }
     result = crtpCommanderHighLevelStartTrajectoryWithOffset(
       0,
-      /* offset = */ offset >= 0 ? offset : 0,
-      /* timescale = */ 1,
-      /* relative = */ 0,
+      /* timeOffset = */ offset >= 0 ? offset : 0,
+      /* timeScale = */ 1,
+      /* relativePosition = */ 0,
+      /* relativeYaw = */ 0,
       /* reversed = */ 0
     );
     if (result) {
@@ -725,7 +728,7 @@ static bool onEnteredState(show_state_t state, show_state_t oldState) {
       state == STATE_LANDING_LOW_BATTERY
         ? landingHeightForLowBattery
         : landingHeight,
-      LANDING_VELOCITY_METERS_PER_SEC / TAKEOFF_CORRECTION_FACTOR,
+      LANDING_VELOCITY_METERS_PER_SEC / LANDING_CORRECTION_FACTOR,
       /* relative = */ 0
     );
   }
@@ -1036,12 +1039,12 @@ static void updateTestingMode() {
    * tumbles during a show */
   if (droneShowIsInTestingMode()) {
     if (!wasInTestingMode) {
-      stabilizerSetEmergencyStop();
+      armingBlockMotors();
       wasInTestingMode = true;
     }
   } else {
     if (wasInTestingMode) {
-      stabilizerResetEmergencyStop();
+      armingUnblockMotors();
       wasInTestingMode = false;
     }
   }

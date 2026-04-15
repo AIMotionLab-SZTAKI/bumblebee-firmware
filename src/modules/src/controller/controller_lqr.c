@@ -14,6 +14,7 @@ LQR controller.
 #include "debug.h"
 #include "controller.h"
 #include "stdlib.h"
+#include "motors.h"
 
 
 // Logging variables
@@ -113,7 +114,7 @@ void controllerLqr(control_t *control, const setpoint_t *setpoint,
   if (abs(delay) > max_delay) {
     delay_ctr++;
     if (delay_ctr > delay_ctr_max) {
-      forceControllerType(ControllerTypeGeom);
+      motorsStop();
     }
   } else {
     delay_ctr=0;

@@ -21,6 +21,8 @@
 // Set center of mass shift externally
 #include "power_distribution.h"
 
+#include "motors.h"
+
 #define ATTITUDE_UPDATE_DT    (float)(1.0f/ATTITUDE_RATE)
 #define COMMUNICATION_RATE RATE_100_HZ
 
@@ -147,7 +149,7 @@ void controllerPid(control_t *control, const setpoint_t *setpoint,
       float dummy2 = 345.12;
       sendDataUART("T", &actuatorThrust, &dummy1, &dummy2);
       */
-      motors_thrust_pwm_t pwm = getMotorPwm();
+      motors_thrust_pwm_t pwm; // = getMotorPwm();
       sendDataUART("F", &pwm.motors.m1, &pwm.motors.m2, &pwm.motors.m3, &pwm.motors.m4);
       uart_packet receiverPacket;
       if (receiveDataUART(&receiverPacket)) {
@@ -173,7 +175,7 @@ void controllerPid(control_t *control, const setpoint_t *setpoint,
       }
 
       if (fail_counter >= 20) {
-        stabilizerSetEmergencyStop();  // switching to emergency mode
+        motorsStop();  // switching to emergency mode
         // maybe later we could just disable uart communication and find a safe setpoint for PID
       }
     }
@@ -202,11 +204,11 @@ void controllerPid(control_t *control, const setpoint_t *setpoint,
     // behavior if level mode is engaged later
     if (setpoint->mode.roll == modeVelocity) {
       rateDesired.roll = setpoint->attitudeRate.roll;
-      attitudeControllerResetRollAttitudePID();
+      attitudeControllerResetRollAttitudePID(state->attitude.roll);
     }
     if (setpoint->mode.pitch == modeVelocity) {
       rateDesired.pitch = setpoint->attitudeRate.pitch;
-      attitudeControllerResetPitchAttitudePID();
+      attitudeControllerResetPitchAttitudePID(state->attitude.pitch);
     }
 
     // TODO: Investigate possibility to subtract gyro drift.
@@ -252,8 +254,8 @@ void controllerPid(control_t *control, const setpoint_t *setpoint,
     cmd_pitch = control->pitch;
     cmd_yaw = control->yaw;
 
-    attitudeControllerResetAllPID();
-    positionControllerResetAllPID();
+    attitudeControllerResetAllPID(state->attitude.roll, state->attitude.pitch, state->attitude.yaw);
+    positionControllerResetAllPID(state->position.x, state->position.y, state->position.z);
 
     // Reset the calculated YAW angle for rate control
     attitudeDesired.yaw = state->attitude.yaw;

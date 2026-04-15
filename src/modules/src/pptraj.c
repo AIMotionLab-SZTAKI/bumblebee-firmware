@@ -38,19 +38,8 @@ See Daniel Mellinger, Vijay Kumar: "Minimum snap trajectory generation and contr
 */
 
 #include "pptraj.h"
-#include "param.h"
-#include "debug.h"
 
 #define GRAV (9.81f)
-#define MASS (0.605f)
-#define JXY (1.5e-3f)
-#define JZ (2.66e-3f)
-
-static float mL = 0.02;
-static float L = 0.4;
-static struct poly4d poly4d_tmp;
-
-static uint8_t traj_mode_drone = 1;
 
 static struct poly4d poly4d_tmp;
 
@@ -317,18 +306,12 @@ struct traj_eval poly4d_eval(struct poly4d const *p, float t)
 	// 2nd derivative
 	polyder4d(deriv);
 	out.acc = polyval_xyz(deriv, t);
-	float ddyaw = polyval_yaw(deriv, t);
 
 	// 3rd derivative
 	polyder4d(deriv);
-	struct vec jerk = polyval_xyz(deriv, t);
+	out.jerk = polyval_xyz(deriv, t);
 
-	// 4th derivative
-	polyder4d(deriv);
-	struct vec snap = polyval_xyz(deriv, t);
-
-	struct vec thrust = vadd(out.acc, mkvec(0, 0, GRAV)); // * m
-	out.thrust = MASS * vmag(thrust);
+	struct vec thrust = vadd(out.acc, mkvec(0, 0, GRAV));
 	// float thrust_mag = mass * vmag(thrust);
 
 	struct vec z_body = vnormalize(thrust);
@@ -336,119 +319,29 @@ struct traj_eval poly4d_eval(struct poly4d const *p, float t)
 	struct vec y_body = vnormalize(vcross(z_body, x_world));
 	struct vec x_body = vcross(y_body, z_body);
 
-	struct vec jerk_orth_zbody = vorthunit(jerk, z_body);
+	struct vec jerk_orth_zbody = vorthunit(out.jerk, z_body);
 	struct vec h_w = vscl(1.0f / vmag(thrust), jerk_orth_zbody);
 
 	out.omega.x = -vdot(h_w, y_body);
 	out.omega.y = vdot(h_w, x_body);
 	out.omega.z = z_body.z * dyaw;
 
-	float thrust_der = vdot(jerk, z_body);
-	float thrust_der_der = vdot(snap, z_body) - 2.0f * thrust_der * vdot(vcross(out.omega, z_body), z_body) - vmag(thrust) * vdot(vcross(out.omega, vcross(out.omega, z_body)), z_body);
-
-	struct vec h_dw = vsub(vscl(1.0f / vmag(thrust), vsub2(snap, vscl(thrust_der_der, z_body), vscl(2*thrust_der, vcross(out.omega, z_body)))), vcross(out.omega, vcross(out.omega, z_body))); 
-
-	struct vec alpha = mkvec(-vdot(h_dw, y_body), vdot(h_w, x_body), z_body.z * ddyaw);
-	struct vec J = mkvec(JXY, JXY, JZ);
-	out.torques = vadd(veltmul(J, alpha), vcross(out.omega, veltmul(J, out.omega)));
-	
-	struct mat33 R = mcolumns(x_body, y_body, z_body);
-	out.rpy = quat2rpy(mat2quat(R));
-
 	return out;
 }
 
-struct traj_eval poly4d_eval_load(struct poly4d const *p, float t)
+void traj_eval_transform(struct traj_eval *ev, struct vec shift, float rotation)
 {
-	// flat variables
-	struct traj_eval out;
-	struct vec rL0 = polyval_xyz(p, t);
-	out.yaw = polyval_yaw(p, t);
+	struct mat33 rotator = mrotz(normalize_radians(rotation));
 
-	// 1st derivative
-	struct poly4d* deriv = &poly4d_tmp;
-	*deriv = *p;
-	polyder4d(deriv);
-	struct vec rL1 = polyval_xyz(deriv, t);
-	float dyaw = polyval_yaw(deriv, t);
+	// rotate position, velocity, acceleration
+	ev->pos = mvmul(rotator, ev->pos);
+	ev->vel = mvmul(rotator, ev->vel);
+	ev->acc = mvmul(rotator, ev->acc);
 
-	// 2nd derivative
-	polyder4d(deriv);
-	struct vec rL2 = polyval_xyz(deriv, t);
-	float ddyaw = polyval_yaw(deriv, t);
-
-	// 3rd derivative
-	polyder4d(deriv);
-	struct vec rL3 = polyval_xyz(deriv, t);
-
-	// 4th derivative
-	polyder4d(deriv);
-	struct vec rL4 = polyval_xyz(deriv, t);
-
-	// 5th derivative
-	polyder4d(deriv);
-	struct vec rL5 = polyval_xyz(deriv, t);
-
-	// 6th derivative
-	polyder4d(deriv);
-	struct vec rL6 = polyval_xyz(deriv, t);
-
-	struct vec g = mkvec(0, 0, GRAV);
-
-	struct vec q0 = vscl(-mL, vadd(rL2, g));
-	float T0 = vmag(q0);
-	q0 = vscl(1/T0, q0);
-	float T1 = -mL * vdot(q0, rL3);
-	struct vec q1 = vscl(-1/T0, vadd(vscl(mL, rL3), vscl(T1, q0)));
-	float T2 = -mL * (vdot(q0, rL4) + vdot(q1, rL3));
-	struct vec q2 = vscl(-1/T0, vadd3(vscl(mL, rL4), vscl(2*T1, q1), vscl(T2, q0)));
-	float T3 = -mL * (vdot(q0, rL5) + 2*vdot(q1, rL4) + vdot(q2, rL3));
-	struct vec q3 = vscl(-1/T0, vadd4(vscl(mL, rL5), vscl(3*T1, q2), vscl(3*T2, q1), vscl(T3, q0)));
-	float T4 = -mL * (vdot(q0, rL6) + 3*vdot(q1, rL5) + 3*vdot(q2, rL4) + vdot(q3, rL3));
-	struct vec q4 = vscl(-1/T0, vadd(vscl(mL, rL6), vadd4(vscl(4*T1, q3), vscl(6*T2, q2), vscl(4*T3, q1), vscl(T4, q0))));
-
-	struct vec r0 = vsub(rL0, vscl(L, q0));
-	struct vec r1 = vsub(rL1, vscl(L, q1));
-	struct vec r2 = vsub(rL2, vscl(L, q2));
-	struct vec r3 = vsub(rL3, vscl(L, q3));
-	struct vec r4 = vsub(rL4, vscl(L, q4));
-
-	struct vec FRe3 = vadd(vscl(MASS, vadd(r2, g)), vscl(mL, vadd(rL2, g)));
-	float F0 = vmag(FRe3);
-	struct vec Re3 = vscl(1/F0, FRe3);
-	struct vec Re2 = vcross(Re3, mkvec(cosf(out.yaw), sinf(out.yaw), 0));
-	struct vec Re1 = vcross(Re2, Re3);
-
-	float F1 = vdot(vadd(vscl(MASS, r3), vscl(mL, rL3)), Re3);
-	struct vec h_w = vscl(1/F0, vsub(vadd(vscl(MASS, r3), vscl(mL, rL3)), vscl(F1, Re3)));
-	out.omega.x = -vdot(h_w, Re2);
-	out.omega.y = vdot(h_w, Re1);
-	out.omega.z = Re3.z * dyaw;
-
-	struct vec temp = vcross(out.omega, Re3);
-	float F2 = vdot(vadd(vscl(MASS, r4), vscl(mL, rL4)), Re3) - F1 * vdot(vcross(out.omega, temp), Re3);
-	struct vec h_dw = vsub2(vsub(vscl(1/F0, vadd(vscl(MASS, r4), vscl(mL, rL4))), vcross(out.omega, temp)), vscl(2*F1/F0, temp), vscl(1/F0*F2, Re3));
-	struct vec dw = mkvec(-vdot(h_dw, Re2), vdot(h_dw, Re1), ddyaw * Re3.z);
-
-	struct vec J = mkvec(JXY, JXY, JZ);
-	out.torques = vadd(veltmul(J, dw), vcross(out.omega, veltmul(J, out.omega)));
-
-	out.beta = asinf(-q0.x);
-	out.alpha = asinf(q0.y/cosf(out.beta));
-	out.dbeta = -q1.x / cosf(out.beta);
-	out.dalpha = (q1.y + sinf(out.alpha) * sinf(out.beta) * out.dbeta) / cosf(out.alpha) / cosf(out.beta);
-
-	struct mat33 R = mcolumns(Re1, Re2, Re3);
-	out.rpy = quat2rpy(mat2quat(R));
-
-	out.pos = r0;
-	out.vel = r1;
-	out.acc = r2;
-	out.thrust = F0;
-
-	return out;
+	// shift
+	ev->yaw += normalize_radians(rotation);
+	ev->pos = vadd(ev->pos, shift);
 }
-
 
 //
 // piecewise 4d polynomials
@@ -464,13 +357,15 @@ struct traj_eval piecewise_eval(
 		struct poly4d const *piece = &(traj->pieces[cursor]);
 		if (t <= piece->duration * traj->timescale) {
 			poly4d_tmp = *piece;
-			poly4d_shift(&poly4d_tmp, traj->shift.x, traj->shift.y, traj->shift.z, 0);
 			poly4d_stretchtime(&poly4d_tmp, traj->timescale);
-			if (!traj_mode_drone) {
-				return poly4d_eval_load(&poly4d_tmp, t);
-			} else {
-				return poly4d_eval(&poly4d_tmp, t);
-			}
+
+			// evaluate polynomial
+			struct traj_eval ev = poly4d_eval(&poly4d_tmp, t);
+
+			// rotate and shift output of polynomial
+			traj_eval_transform(&ev, traj->shift, traj->shift_yaw);
+
+			return ev;
 		}
 		t -= piece->duration * traj->timescale;
 		++cursor;
@@ -478,9 +373,11 @@ struct traj_eval piecewise_eval(
 	// if we get here, the trajectory has ended
 	struct poly4d const *end_piece = &(traj->pieces[traj->n_pieces - 1]);
 	struct traj_eval ev = poly4d_eval(end_piece, end_piece->duration);
-	ev.pos = vadd(ev.pos, traj->shift);
+	traj_eval_transform(&ev, traj->shift, traj->shift_yaw);
+
 	ev.vel = vzero();
 	ev.acc = vzero();
+	ev.jerk = vzero();
 	ev.omega = vzero();
 	return ev;
 }
@@ -511,6 +408,7 @@ struct traj_eval piecewise_eval_reversed(
 	ev.pos = vadd(ev.pos, traj->shift);
 	ev.vel = vzero();
 	ev.acc = vzero();
+	ev.jerk = vzero();
 	ev.omega = vzero();
 	return ev;
 }
@@ -548,7 +446,3 @@ void piecewise_plan_7th_order_no_jerk(struct piecewise_traj *pp, float duration,
 	poly7_nojerk(p->p[3], duration, y0, dy0, 0, y1, dy1, 0);
 }
 
-PARAM_GROUP_START(pptraj)
-PARAM_ADD(PARAM_UINT8, traj_mode_drone, &traj_mode_drone)
-PARAM_ADD(PARAM_FLOAT, payload_mass, &mL)
-PARAM_GROUP_STOP(pptraj)

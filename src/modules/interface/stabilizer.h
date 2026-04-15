@@ -30,9 +30,6 @@
 #include <stdint.h>
 
 #include "estimator.h"
-#include "controller.h"
-
-#define EMERGENCY_STOP_TIMEOUT_DISABLED (-1)
 
 /**
  * Initialize the stabilizer subsystem and launch the stabilizer loop task.
@@ -46,27 +43,5 @@ void stabilizerInit(StateEstimatorType estimator);
  * @return True if all test has passed. False otherwise.
  */
 bool stabilizerTest(void);
-
-/**
- * Enable emergency stop, will shut-off energy to the motors.
- */
-void stabilizerSetEmergencyStop();
-
-/**
- * Disable emergency stop, will enable energy to the motors.
- */
-void stabilizerResetEmergencyStop();
-
-/**
- * Restart the countdown until emergercy stop will be enabled.
- *
- * @param timeout Timeout in stabilizer loop tick. The stabilizer loop rate is
- *                RATE_MAIN_LOOP.
- */
-void stabilizerSetEmergencyStopTimeout(int timeout);
-
-void forceControllerType(ControllerType controller);
-
-motors_thrust_pwm_t getMotorPwm();
 
 #endif /* STABILIZER_H_ */

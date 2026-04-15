@@ -12,3 +12,4 @@ obj-y += position_controller_pid.o
 obj-y += controller_lqr.o
 obj-y += controller_switch.o
 obj-y += controller_body_rate.o
+obj-y += controller_lee.o

@@ -7,6 +7,7 @@
 #include "controller_mellinger.h"
 #include "controller_indi.h"
 #include "controller_brescianini.h"
+#include "controller_lee.h"
 #include "controller_geom.h"
 #include "controller_lqr_1dof.h"
 #include "controller_lqr_2dof.h"
@@ -40,6 +41,10 @@ static ControllerFcns controllerFunctions[] = {
   {.init = controllerSwitchInit, .test = controllerSwitchTest, .update = controllerSwitch, .name = "LQR-TO-GEOM"},
   {.init = controllerLqrInit, .test = controllerLqrTest, .update = controllerLqr, .name = "LQR"},
   {.init = controllerBodyRateInit, .test = controllerBodyRateTest, .update = controllerBodyRate, .name = "Bodyrate"},
+  {.init = controllerLeeFirmwareInit, .test = controllerLeeFirmwareTest, .update = controllerLeeFirmware, .name = "Lee"},
+  #ifdef CONFIG_CONTROLLER_OOT
+  {.init = controllerOutOfTreeInit, .test = controllerOutOfTreeTest, .update = controllerOutOfTree, .name = "OutOfTree"},
+  #endif
 };
 
 
@@ -74,6 +79,10 @@ void controllerInit(ControllerType controller) {
     #define CONTROLLER ControllerTypeSwitch
   #elif defined(CONFIG_CONTROLLER_BODY_RATE)
     #define CONTROLLER ControllerTypeBodyRate
+  #elif defined(CONFIG_CONTROLLER_LEE)
+    #define CONTROLLER ControllerTypeLee
+  #elif defined(CONFIG_CONTROLLER_OOT)
+    #define CONTROLLER ControllerTypeOot
   #else
     #define CONTROLLER ControllerTypeAutoSelect
   #endif
@@ -101,8 +110,8 @@ bool controllerTest(void) {
   return controllerFunctions[currentController].test();
 }
 
-void controller(control_t *control, const setpoint_t *setpoint, const sensorData_t *sensors, const state_t *state, const uint32_t tick) {
-  controllerFunctions[currentController].update(control, setpoint, sensors, state, tick);
+void controller(control_t *control, const setpoint_t *setpoint, const sensorData_t *sensors, const state_t *state, const stabilizerStep_t stabilizerStep) {
+  controllerFunctions[currentController].update(control, setpoint, sensors, state, stabilizerStep);
 }
 
 const char* controllerGetName() {

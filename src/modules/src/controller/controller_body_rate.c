@@ -24,6 +24,9 @@
 // Set center of mass shift externally
 #include "power_distribution.h"
 
+#include "motors.h"
+
+
 #define ATTITUDE_UPDATE_DT    (float)(1.0f/ATTITUDE_RATE)
 #define COMMUNICATION_RATE RATE_100_HZ
 
@@ -129,7 +132,7 @@ void controllerBodyRate(control_t *control, const setpoint_t *setpoint,
       }
 
       if (fail_counter >= 20) {
-        stabilizerSetEmergencyStop();  // switching to emergency mode
+        motorsStop();  // switching to emergency mode
         // maybe later we could just disable uart communication and find a safe setpoint for PID
       }
     }

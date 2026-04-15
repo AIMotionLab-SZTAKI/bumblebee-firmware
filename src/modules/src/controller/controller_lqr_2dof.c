@@ -13,6 +13,7 @@ LQR payload stabilizing controller.
 #include "pm.h"
 #include "stdlib.h"
 #include "mem.h"
+#include "motors.h"
 
 #define LQR_N 240 // 30kbyte=15360 uint16 param
 #define INT16_LQR_SCALING 32766
@@ -206,7 +207,7 @@ void controllerLqr2Dof(control_t *control, const setpoint_t *setpoint,
   if (abs(delay) > max_delay) {
     delay_ctr++;
     if (delay_ctr > delay_ctr_max && !duration) {
-      forceControllerType(ControllerTypeGeom);
+      motorsStop();
     }
   } else {
     delay_ctr=0;
