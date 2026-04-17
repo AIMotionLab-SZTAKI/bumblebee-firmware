@@ -54,7 +54,7 @@ static float Izz = 0.005;
 
 static float dt = ATTITUDE_UPDATE_DT;
 
-static float kw = 80.0f;
+static float kw = 25.0f;
 
 static float armLength = 0.085f; // m;
 
