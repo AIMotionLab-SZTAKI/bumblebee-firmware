@@ -830,6 +830,17 @@ uint16_t motorsGetRatio(uint32_t id)
   return motor_ratios[id];
 }
 
+uint16_t motorsGetRPM(uint32_t id)
+{
+  ASSERT(id < NBR_OF_MOTORS);
+
+#ifdef CONFIG_MOTORS_ESC_PROTOCOL_DSHOT_BIDIRECTIONAL
+  return motorRPMs[id];
+#else
+  return UINT16_MAX;
+#endif
+}
+
 void motorsBeep(int id, bool enable, uint16_t frequency, uint16_t ratio)
 {
   TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;

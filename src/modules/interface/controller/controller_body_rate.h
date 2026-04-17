@@ -21,7 +21,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
- * controller_pid.h - PID Controller Interface
+ * controller_body_rate.h - Body Rate Controller Interface
  */
 #ifndef __CONTROLLER_BODY_RATE_H__
 #define __CONTROLLER_BODY_RATE_H__
@@ -34,5 +34,9 @@ void controllerBodyRate(control_t *control, const setpoint_t *setpoint,
                                          const sensorData_t *sensors,
                                          const state_t *state,
                                          const uint32_t tick);
+
+float getThrust(void);
+float getStatus(void);
+void getRateDesired(attitude_t *rate);
 
 #endif //__CONTROLLER_BODY_RATE_H__

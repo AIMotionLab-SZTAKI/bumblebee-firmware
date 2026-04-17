@@ -41,6 +41,40 @@
 #include "log.h"
 #include "param.h"
 
+// these parameters are used in the filtering of the angular acceleration [Hz]
+#define STABILIZATION_INDI_FILT_CUTOFF 8.0f
+
+// the yaw sometimes requires more filtering
+#define STABILIZATION_INDI_FILT_CUTOFF_R STABILIZATION_INDI_FILT_CUTOFF
+
+// Control effectiveness coefficients values Volodscoi
+#define STABILIZATION_INDI_G1_P 0.0066146f
+#define STABILIZATION_INDI_G1_Q 0.0052125f
+#define STABILIZATION_INDI_G1_R 0.001497f
+#define STABILIZATION_INDI_G2_R 0.000043475f
+
+// Control effectiveness coefficients values Max Kemmeren, these will become the new ones, not finalized yet
+// #define STABILIZATION_INDI_G1_P 0.0032502f
+// #define STABILIZATION_INDI_G1_Q 0.0027555f
+// #define STABILIZATION_INDI_G1_R 0.00068154f
+// #define STABILIZATION_INDI_G2_R 0.00001725f
+
+//Proportional gains inner INDI, attitude error
+#define STABILIZATION_INDI_REF_ERR_P 5.0f
+#define STABILIZATION_INDI_REF_ERR_Q 5.0f
+#define STABILIZATION_INDI_REF_ERR_R 5.0f
+
+//Derivative gains inner INDI, attitude rate error
+#define STABILIZATION_INDI_REF_RATE_P 24.0f
+#define STABILIZATION_INDI_REF_RATE_Q 24.0f
+#define STABILIZATION_INDI_REF_RATE_R 24.0f
+
+// Actuator model coefficient
+#define STABILIZATION_INDI_ACT_DYN_P 0.03149f
+#define STABILIZATION_INDI_ACT_DYN_Q 0.03149f
+#define STABILIZATION_INDI_ACT_DYN_R 0.03149f
+
+
 struct Vectr {
   float x; 
   float y; 

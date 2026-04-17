@@ -28,7 +28,6 @@
 
 
 #define ATTITUDE_UPDATE_DT    (float)(1.0f/ATTITUDE_RATE)
-#define COMMUNICATION_RATE RATE_100_HZ
 
 // Inertia matrix components
 static float Ixx = 0.0015;
@@ -105,8 +104,11 @@ void controllerBodyRate(control_t *control, const setpoint_t *setpoint,
       float dummy2 = 345.12;
       sendDataUART("T", &actuatorThrust, &dummy1, &dummy2);
       */
-      motors_thrust_pwm_t pwm;// = getMotorPwm();
-      sendDataUART("F", &pwm.motors.m1, &pwm.motors.m2, &pwm.motors.m3, &pwm.motors.m4);
+      uint16_t motorRPMs[4];
+      for (int i = 0; i < 4; i++) {
+        motorRPMs[i] = motorsGetRPM(i);
+      }
+      sendDataUART("F", motorRPMs, motorRPMs + 1, motorRPMs + 2, motorRPMs + 3);
       uart_packet receiverPacket;
       if (receiveDataUART(&receiverPacket)) {
         if (receiverPacket.serviceType == CONTROL_PACKET) {
@@ -193,10 +195,10 @@ void controllerBodyRate(control_t *control, const setpoint_t *setpoint,
         control->torqueZ = 0;
     }
 
-    cmd_thrust = control->thrust;
-    cmd_roll = control->roll;
-    cmd_pitch = control->pitch;
-    cmd_yaw = control->yaw;
+    cmd_thrust = control->thrustSi;
+    cmd_roll = control->torqueX;
+    cmd_pitch = control->torqueY;
+    cmd_yaw = control->torqueZ;
     r_roll = radians(sensors->gyro.x);
     r_pitch = -radians(sensors->gyro.y);
     r_yaw = radians(sensors->gyro.z);
@@ -205,6 +207,27 @@ void controllerBodyRate(control_t *control, const setpoint_t *setpoint,
 
 }
 
+float getThrust(void) {
+  return thrust_ext;
+}
+
+float getStatus(void) {
+  return status_ext;
+}
+
+void getRateDesired(attitude_t *rate) {
+  *rate = rateDesired_ext;
+}
+
 PARAM_GROUP_START(bodyrate)
 PARAM_ADD(PARAM_UINT8, external_control, &external_control)
 PARAM_GROUP_STOP(bodyrate)
+
+LOG_GROUP_START(ctrlBR)
+LOG_ADD(LOG_FLOAT, cmd_thrust, &cmd_thrust)
+LOG_ADD(LOG_FLOAT, cmd_roll, &cmd_roll)
+LOG_ADD(LOG_FLOAT, cmd_pitch, &cmd_pitch)
+LOG_ADD(LOG_FLOAT, cmd_yaw, &cmd_yaw)
+LOG_ADD(LOG_FLOAT, r_roll, &r_roll)
+LOG_ADD(LOG_FLOAT, r_pitch, &r_pitch)
+LOG_GROUP_STOP(ctrlBR)

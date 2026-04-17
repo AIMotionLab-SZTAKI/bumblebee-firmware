@@ -23,123 +23,129 @@
  * http://arc.aiaa.org/doi/pdf/10.2514/1.G001490
  */
 
+ #include "controller_body_rate.h"
+
 #include "controller_indi.h"
 #include "math3d.h"
+#include "log.h"
+#include "param.h"
 
-static float thrust_threshold = 300.0f;
-static float bound_control_input = 32000.0f;
+// Communication module include
+#include "communication.h"
 
-static attitude_t attitudeDesired;
-static attitude_t rateDesired;
-static float actuatorThrust;
-struct FloatRates body_rates;
-static vector_t refOuterINDI;				// Reference values from outer loop INDI
-static bool outerLoopActive = true ; 		// if 1, outer loop INDI is activated
+// Power management to get battery voltage
+#include "pm.h"
 
-static struct IndiVariables indi = {
-		.g1 = {STABILIZATION_INDI_G1_P, STABILIZATION_INDI_G1_Q, STABILIZATION_INDI_G1_R},
-		.g2 = STABILIZATION_INDI_G2_R,
-		.reference_acceleration = {
-				STABILIZATION_INDI_REF_ERR_P,
-				STABILIZATION_INDI_REF_ERR_Q,
-				STABILIZATION_INDI_REF_ERR_R,
-				STABILIZATION_INDI_REF_RATE_P,
-				STABILIZATION_INDI_REF_RATE_Q,
-				STABILIZATION_INDI_REF_RATE_R
-		},
-		.act_dyn = {STABILIZATION_INDI_ACT_DYN_P, STABILIZATION_INDI_ACT_DYN_Q, STABILIZATION_INDI_ACT_DYN_R},
-		.filt_cutoff = STABILIZATION_INDI_FILT_CUTOFF,
-		.filt_cutoff_r = STABILIZATION_INDI_FILT_CUTOFF_R,
-};
+// Gravity
+#include "physicalConstants.h"
 
-static inline void float_rates_zero(struct FloatRates *fr) {
-	fr->p = 0.0f;
-	fr->q = 0.0f;
-	fr->r = 0.0f;
-}
+// Set center of mass shift externally
+#include "power_distribution.h"
+
+#include "motors.h"
+
+#include "filter.h"
+
+#define ATTITUDE_UPDATE_DT    (float)(1.0f/ATTITUDE_RATE)
+
+// Inertia matrix components
+static float Ixx = 0.0045;
+static float Izz = 0.005;
+
+static float dt = ATTITUDE_UPDATE_DT;
+
+static float kw = 80.0f;
+
+static float armLength = 0.085f; // m;
+
+// thrust = c * signed_sum(ang_vel^2)
+static float angVelToThrust = 9.3945e-7f;  // old value: 9.3945e-7f; new value: 8.6584e-7f;
+
+// torque = a/c * signed_sum(thrust) + b/c
+static float thrustToTorqueA = 5.5939e-7f;
+static float thrustToTorqueB = -0.4785f;
+
+// main variables
+static struct vec body_rate, angular_acc, desired_angular_acc, desired_body_torque, filtered_body_torque, prev_wd, computed_body_torque;
+static float rotor_acc[4];
+static uint16_t motorRPMs[4];
+static float filter_cutoff = 10.0f;  // Hz
+static Butterworth2LowPass body_rate_filters[3];
+static Butterworth2LowPass rotor_speed_filters[4];
+
+static attitude_t rateDesired_ext;
+// static float actuatorThrust;
+static float thrust_ext;
+static float status_ext;  // status flag of external control input
+static int fail_counter;  // number of subsequent invalid external control inputs 
+static float com_shift_x = 0.0f;
+static float com_shift_y = 0.0f;
+
+// log variables
+static float cmd_thrust, cmd_roll, cmd_pitch, cmd_yaw, r_roll, r_pitch, r_yaw, accelz;
+
+// helpers
+static uint8_t external_control = 0;
+
+static bool enable_uart_comm = true;
+
+static float batt_comp_a = -0.1245;  // with kR = 0.6: -0.1205
+static float batt_comp_b = 2.768;  // with kR = 0.6: 2.6802
+
+static float supplyVoltage;
 
 void indi_init_filters(void)
 {
 	// tau = 1/(2*pi*Fc)
-	float tau = 1.0f / (2.0f * M_PI_F * indi.filt_cutoff);
-	float tau_r = 1.0f / (2.0f * M_PI_F * indi.filt_cutoff_r);
-	float tau_axis[3] = {tau, tau, tau_r};
-	float sample_time = 1.0f / ATTITUDE_RATE;
+	float tau = 1.0f / (2.0f * M_PI_F * filter_cutoff);
+
 	// Filtering of gyroscope and actuators
 	for (int8_t i = 0; i < 3; i++) {
-		init_butterworth_2_low_pass(&indi.u[i], tau_axis[i], sample_time, 0.0f);
-		init_butterworth_2_low_pass(&indi.rate[i], tau_axis[i], sample_time, 0.0f);
+		init_butterworth_2_low_pass(&body_rate_filters[i], tau, dt, 0.0f);
+	}
+	// Initialize rotor speed filters
+	for (int8_t i = 0; i < 4; i++) {
+		init_butterworth_2_low_pass(&rotor_speed_filters[i], tau, dt, 0.0f);
 	}
 }
 
-/**
- * @brief Update butterworth filter for p, q and r of a FloatRates struct
- *
- * @param filter The filter array to use
- * @param new_values The new values
- */
-static inline void filter_pqr(Butterworth2LowPass *filter, struct FloatRates *new_values)
+static inline void filter_body_rates(Butterworth2LowPass *filter, struct vec *new_values)
 {
-	update_butterworth_2_low_pass(&filter[0], new_values->p);
-	update_butterworth_2_low_pass(&filter[1], new_values->q);
-	update_butterworth_2_low_pass(&filter[2], new_values->r);
+	update_butterworth_2_low_pass(&filter[0], new_values->x);
+	update_butterworth_2_low_pass(&filter[1], new_values->y);
+	update_butterworth_2_low_pass(&filter[2], new_values->z);
 }
 
-/**
- * @brief Caclulate finite difference form a filter array
- * The filter already contains the previous values
- *
- * @param output The output array
- * @param filter The filter array input
- */
-static inline void finite_difference_from_filter(float *output, Butterworth2LowPass *filter)
+static inline void filter_rotor_speeds(Butterworth2LowPass *filter, float *new_values)
 {
-	for (int8_t i = 0; i < 3; i++) {
-		output[i] = (filter[i].o[0] - filter[i].o[1]) * ATTITUDE_RATE;
+	for (int8_t i = 0; i < 4; i++) {
+		update_butterworth_2_low_pass(&filter[i], new_values[i]);
 	}
 }
 
-static float capAngle(float angle) {
-  float result = angle;
-
-  while (result > 180.0f) {
-    result -= 360.0f;
-  }
-
-  while (result < -180.0f) {
-    result += 360.0f;
-  }
-
-  return result;
+static inline void finite_difference_from_body_rate_filter(struct vec *output, Butterworth2LowPass *filter)
+{
+	output->x = (filter[0].o[0] - filter[0].o[1]) / dt;
+	output->y = (filter[1].o[0] - filter[1].o[1]) / dt;
+	output->z = (filter[2].o[0] - filter[2].o[1]) / dt;
 }
 
+static inline void finite_difference_from_rotor_speed_filter(float *output, Butterworth2LowPass *filter)
+{
+	for (int8_t i = 0; i < 4; i++) {
+		output[i] = (filter[i].o[0] - filter[i].o[1]) / dt;
+	}
+}
 
 void controllerINDIInit(void)
 {
-	/*
-	 * TODO
-	 * Can this also be called during flight, for instance when switching controllers?
-	 * Then the filters should not be reset to zero but to the current values of sensors and actuators.
-	 */
-	float_rates_zero(&indi.angular_accel_ref);
-	float_rates_zero(&indi.u_act_dyn);
-	float_rates_zero(&indi.u_in);
-
-	// Re-initialize filters
 	indi_init_filters();
-
-	attitudeControllerInit(ATTITUDE_UPDATE_DT);
-	positionControllerInit();
-	positionControllerINDIInit();
+    supplyVoltage = pmGetBatteryVoltage();
 }
 
 bool controllerINDITest(void)
 {
-	bool pass = true;
-
-	pass &= attitudeControllerTest();
-
-	return pass;
+	return true;
 }
 
 void controllerINDI(control_t *control, const setpoint_t *setpoint,
@@ -147,399 +153,180 @@ void controllerINDI(control_t *control, const setpoint_t *setpoint,
 	const state_t *state,
 	const stabilizerStep_t stabilizerStep)
 {
-	control->controlMode = controlModeLegacy;
+  control->controlMode = controlModeForceTorque;
 
-	//The z_distance decoder adds a negative sign to the yaw command, the position decoder doesn't
+  if (RATE_DO_EXECUTE(COMMUNICATION_RATE, stabilizerStep)) {
+    if (enable_uart_comm) {
+      /*sendDataUART("C", &actuatorThrust, state);
+      float dummy1 = 12.34;
+      float dummy2 = 345.12;
+      sendDataUART("T", &actuatorThrust, &dummy1, &dummy2);
+      */
+      for (int i = 0; i < 4; i++) {
+        motorRPMs[i] = motorsGetRPM(i);
+      }
+      sendDataUART("F", motorRPMs, motorRPMs + 1, motorRPMs + 2, motorRPMs + 3);
+      uart_packet receiverPacket;
+      if (receiveDataUART(&receiverPacket)) {
+        if (receiverPacket.serviceType == CONTROL_PACKET) {
+          handle_control_packet(&receiverPacket, &thrust_ext, &rateDesired_ext.roll, &rateDesired_ext.pitch, &rateDesired_ext.yaw);
+        } else if (receiverPacket.serviceType == FORWARDED_CONTROL_PACKET) {
+          handle_forwarded_packet(&receiverPacket, &thrust_ext, &rateDesired_ext.roll, &rateDesired_ext.pitch, &rateDesired_ext.yaw, &status_ext,
+                                  &com_shift_x, &com_shift_y);
+          setComShift(com_shift_x, com_shift_y);
+          if (status_ext > 0.5f) { // invalid control input
+            fail_counter += 1;
+          } else {
+            fail_counter = 0;
+          }
+        }
+        // convert thrust from N to PWM
+        supplyVoltage =  0.99f * supplyVoltage + 0.01f * pmGetBatteryVoltage();  
+        float mass_ratio = batt_comp_a * supplyVoltage + batt_comp_b;
+        //float thrust_battery_corrected = thrust_ext * mass_ratio;
+        //thrust_ext = getThrustPwm(thrust_battery_corrected);
+        thrust_ext *= mass_ratio;
+      } else if (external_control) { // communication timeout but still trying to control externally
+        fail_counter += 11;
+      }
+
+      if (fail_counter >= 20) {
+        motorsStop();  // switching to emergency mode
+        // maybe later we could just disable uart communication and find a safe setpoint for PID
+      }
+    }
+	// thrust_ext = getThrust();
+    // getRateDesired(&rateDesired_ext);
+  }
+
+
 	if (RATE_DO_EXECUTE(ATTITUDE_RATE, stabilizerStep)) {
-		// Rate-controled YAW is moving YAW angle setpoint
-		if (setpoint->mode.yaw == modeVelocity) {
-			attitudeDesired.yaw += setpoint->attitudeRate.yaw * ATTITUDE_UPDATE_DT; //if line 140 (or the other setpoints) in crtp_commander_generic.c has the - sign remove add a -sign here to convert the crazyfly coords (ENU) to INDI  body coords (NED)
-			while (attitudeDesired.yaw > 180.0f)
-				attitudeDesired.yaw -= 360.0f;
-			while (attitudeDesired.yaw < -180.0f)
-				attitudeDesired.yaw += 360.0f;
-
-			attitudeDesired.yaw = radians(attitudeDesired.yaw); //convert to radians
-		} else {
-			attitudeDesired.yaw = setpoint->attitude.yaw;
-			attitudeDesired.yaw = capAngle(attitudeDesired.yaw); //use the capangle as this is also done in velocity mode
-			attitudeDesired.yaw = -radians(attitudeDesired.yaw); //convert to radians and add negative sign to convert from ENU to NED
-		}
-	}
-
-	if (RATE_DO_EXECUTE(POSITION_RATE, stabilizerStep) && !outerLoopActive) {
-		positionController(&actuatorThrust, &attitudeDesired, setpoint, state);
-	}
-
-	/*
-	 * Skipping calls faster than ATTITUDE_RATE
-	 */
-	if (RATE_DO_EXECUTE(ATTITUDE_RATE, stabilizerStep)) {
-
-		// Call outer loop INDI (position controller)
-		if (outerLoopActive) {
-			positionControllerINDI(sensors, setpoint, state, &refOuterINDI);
-		}
-
-		// Switch between manual and automatic position control
-		if (setpoint->mode.z == modeDisable) {
-				// INDI position controller not active, INDI attitude controller is main loop
-				actuatorThrust = setpoint->thrust;
-		} else{
-			if (outerLoopActive) {
-				// INDI position controller active, INDI attitude controller becomes inner loop
-				actuatorThrust = refOuterINDI.z;
-			}
-		}
-		if (setpoint->mode.x == modeDisable) {
-
-				// INDI position controller not active, INDI attitude controller is main loop
-				attitudeDesired.roll = radians(setpoint->attitude.roll); //no sign conversion as CF coords is equal to NED for roll
-
-		}else{
-			if (outerLoopActive) {
-				// INDI position controller active, INDI attitude controller becomes inner loop
-				attitudeDesired.roll = refOuterINDI.x; //outer loop provides radians
-			}
-		}
-
-		if (setpoint->mode.y == modeDisable) {
-
-				// INDI position controller not active, INDI attitude controller is main loop
-				attitudeDesired.pitch = radians(setpoint->attitude.pitch); //no sign conversion as CF coords use left hand for positive pitch.
-
-		}else{
-			if (outerLoopActive) {
-				// INDI position controller active, INDI attitude controller becomes inner loop
-				attitudeDesired.pitch = refOuterINDI.y; //outer loop provides radians
-			}
-		}
-
-		//Proportional controller on attitude angles [rad]
-		rateDesired.roll 	= indi.reference_acceleration.err_p*(attitudeDesired.roll - radians(state->attitude.roll));
-		rateDesired.pitch 	= indi.reference_acceleration.err_q*(attitudeDesired.pitch - radians(state->attitude.pitch));
-		rateDesired.yaw 	= indi.reference_acceleration.err_r*(attitudeDesired.yaw - (-radians(state->attitude.yaw))); //negative yaw ENU  ->  NED
-
-		// For roll and pitch, if velocity mode, overwrite rateDesired with the setpoint
-		// value. Also reset the PID to avoid error buildup, which can lead to unstable
-		// behavior if level mode is engaged later
-		if (setpoint->mode.roll == modeVelocity) {
-			rateDesired.roll = radians(setpoint->attitudeRate.roll);
-			attitudeControllerResetRollAttitudePID(state->attitude.roll);
-		}
-		if (setpoint->mode.pitch == modeVelocity) {
-			rateDesired.pitch = radians(setpoint->attitudeRate.pitch);
-			attitudeControllerResetPitchAttitudePID(state->attitude.pitch);
-		}
-
+	  if (external_control) {
 		/*
-		 * 1 - Update the gyro filter with the new measurements.
-		 */
+		* 1 - Update the gyro filter with the new measurements.
+		*/
 
-		body_rates.p = radians(sensors->gyro.x);
-		body_rates.q = -radians(sensors->gyro.y); //Account for gyro measuring pitch rate in opposite direction relative to both the CF coords and INDI coords
-		body_rates.r = -radians(sensors->gyro.z); //Account for conversion of ENU -> NED
-
-		filter_pqr(indi.rate, &body_rates);
+		body_rate = mkvec(radians(sensors->gyro.x), radians(sensors->gyro.y), radians(sensors->gyro.z));
+		filter_body_rates(body_rate_filters, &body_rate);
 
 		/*
 		 * 2 - Calculate the derivative with finite difference.
 		 */
 
-		finite_difference_from_filter(indi.rate_d, indi.rate);
+		finite_difference_from_body_rate_filter(&angular_acc, body_rate_filters);
 
 		/*
-		 * 3 - same filter on the actuators (or control_t values), using the commands from the previous timestep.
+		 * 3 - same filter on the rotor speeds and derivative computation with finite difference
 		 */
-		filter_pqr(indi.u, &indi.u_act_dyn);
-
-
-		/*
-		 * 4 - Calculate the desired angular acceleration by:
-		 * 4.1 - Rate_reference = P * attitude_error, where attitude error can be calculated with your favorite
-		 * algorithm. You may even use a function that is already there, such as attitudeControllerCorrectAttitudePID(),
-		 * though this will be inaccurate for large attitude errors, but it will be ok for now.
-		 * 4.2 Angular_acceleration_reference = D * (rate_reference – rate_measurement)
-		 */
-
-		//Calculate the attitude rate error, using the unfiltered gyroscope measurements (only the preapplied filters in bmi088)
-		float attitude_error_p = rateDesired.roll - body_rates.p;
-		float attitude_error_q = rateDesired.pitch - body_rates.q;
-		float attitude_error_r = rateDesired.yaw - body_rates.r;
-
-		//Apply derivative gain
-		indi.angular_accel_ref.p = indi.reference_acceleration.rate_p * attitude_error_p;
-		indi.angular_accel_ref.q = indi.reference_acceleration.rate_q * attitude_error_q;
-		indi.angular_accel_ref.r = indi.reference_acceleration.rate_r * attitude_error_r;
-
-		/*
-		 * 5. Update the For each axis: delta_command = 1/control_effectiveness * (angular_acceleration_reference – angular_acceleration)
-		 */
-
-		//Increment in angular acceleration requires increment in control input
-		//G1 is the control effectiveness. In the yaw axis, we need something additional: G2.
-		//It takes care of the angular acceleration caused by the change in rotation rate of the propellers
-		//(they have significant inertia, see the paper mentioned in the header for more explanation)
-		indi.du.p = 1.0f / indi.g1.p * (indi.angular_accel_ref.p - indi.rate_d[0]);
-		indi.du.q = 1.0f / indi.g1.q * (indi.angular_accel_ref.q - indi.rate_d[1]);
-		indi.du.r = 1.0f / (indi.g1.r + indi.g2) * (indi.angular_accel_ref.r - indi.rate_d[2] + indi.g2 * indi.du.r);
-
-
-		/*
-		 * 6. Add delta_commands to commands and bound to allowable values
-		 */
-
-		indi.u_in.p = indi.u[0].o[0] + indi.du.p;
-		indi.u_in.q = indi.u[1].o[0] + indi.du.q;
-		indi.u_in.r = indi.u[2].o[0] + indi.du.r;
-
-		//bound the total control input
-		indi.u_in.p = clamp(indi.u_in.p, -1.0f*bound_control_input, bound_control_input);
-		indi.u_in.q = clamp(indi.u_in.q, -1.0f*bound_control_input, bound_control_input);
-		indi.u_in.r = clamp(indi.u_in.r, -1.0f*bound_control_input, bound_control_input);
-
-		//Propagate input filters
-		//first order actuator dynamics
-		indi.u_act_dyn.p = indi.u_act_dyn.p + indi.act_dyn.p * (indi.u_in.p - indi.u_act_dyn.p);
-		indi.u_act_dyn.q = indi.u_act_dyn.q + indi.act_dyn.q * (indi.u_in.q - indi.u_act_dyn.q);
-		indi.u_act_dyn.r = indi.u_act_dyn.r + indi.act_dyn.r * (indi.u_in.r - indi.u_act_dyn.r);
-
-	}
-
-	indi.thrust = actuatorThrust;
-
-	//Don't increment if thrust is off
-	//TODO: this should be something more elegant, but without this the inputs
-	//will increment to the maximum before even getting in the air.
-	if(indi.thrust < thrust_threshold) {
-		float_rates_zero(&indi.angular_accel_ref);
-		float_rates_zero(&indi.u_act_dyn);
-		float_rates_zero(&indi.u_in);
-
-		if(indi.thrust == 0){
-			attitudeControllerResetAllPID(state->attitude.roll, state->attitude.pitch, state->attitude.yaw);
-			positionControllerResetAllPID(state->position.x, state->position.y, state->position.z);
-
-			// Reset the calculated YAW angle for rate control
-			attitudeDesired.yaw = -state->attitude.yaw;
+		for (int i = 0; i < 4; i++) {
+			motorRPMs[i] = motorsGetRPM(i);
+			if (motorRPMs[i] > 65000) {
+				motorRPMs[i] = 0; // motor is not running
+			}
 		}
-	}
+		float motor_speeds[4];
+		for (int i = 0; i < 4; i++) {
+			motor_speeds[i] = (float)motorRPMs[i] * 2.0f * M_PI_F / 60.0f; // convert RPM to rad/s
+		}
+		filter_rotor_speeds(rotor_speed_filters, motor_speeds);
+		finite_difference_from_rotor_speed_filter(rotor_acc, rotor_speed_filters);
 
-	/*  INDI feedback */
-	control->thrust = indi.thrust;
-	control->roll = indi.u_in.p;
-	control->pitch = indi.u_in.q;
-	control->yaw  = indi.u_in.r;
+		/*
+		 * 4 - Calculate the desired angular acceleration from (33)
+		 */
+		struct vec beta_desired = vzero();
+		struct vec wd = mkvec(radians(rateDesired_ext.roll), -radians(rateDesired_ext.pitch), radians(rateDesired_ext.yaw));
+        if (prev_wd.x == prev_wd.x) { //d part initialized
+            beta_desired = vscl(1.0f/dt, vsub(wd, prev_wd));
+        }
+        prev_wd = wd;
+
+		// desired_angular_acc.x = kw * (wd.x - body_rate_filters[0].o[0]) + beta_desired.x;
+		// desired_angular_acc.y = kw * (wd.y - body_rate_filters[1].o[0]) + beta_desired.y;
+		// desired_angular_acc.z = kw * (wd.z - body_rate_filters[2].o[0]) + beta_desired.z;
+		desired_angular_acc.x = kw * (wd.x - body_rate_filters[0].o[0]);
+		desired_angular_acc.y = kw * (wd.y - body_rate_filters[1].o[0]);
+		desired_angular_acc.z = kw * (wd.z - body_rate_filters[2].o[0]);
+
+		/*
+		 * 5. Calculate the control moment from (34)
+		 */
+		float c = armLength * angVelToThrust;
+		float w_f_2[4];
+		for (int i = 0; i < 4; i++) {
+			w_f_2[i] = rotor_speed_filters[i].o[0] * rotor_speed_filters[i].o[0];
+		}
+		filtered_body_torque.x = -c * w_f_2[0] - c * w_f_2[1] + c * w_f_2[2] + c * w_f_2[3];
+		filtered_body_torque.y = -c * w_f_2[0] + c * w_f_2[1] + c * w_f_2[2] - c * w_f_2[3];
+		float signed_squared_sum = - w_f_2[0] + w_f_2[1] - w_f_2[2] + w_f_2[3];
+		if (signed_squared_sum > - thrustToTorqueB / thrustToTorqueA) {
+			filtered_body_torque.z = thrustToTorqueA * signed_squared_sum + thrustToTorqueB;
+		} else if (signed_squared_sum < thrustToTorqueB / thrustToTorqueA) {
+			filtered_body_torque.z = thrustToTorqueA * signed_squared_sum - thrustToTorqueB;
+		} else {
+			filtered_body_torque.z = 0.0f;
+		}
+
+		computed_body_torque.x = Ixx * angular_acc.x;
+		computed_body_torque.y = Ixx * angular_acc.y;
+		computed_body_torque.z = Izz * angular_acc.z;
+
+		desired_body_torque.x = filtered_body_torque.x + Ixx * (desired_angular_acc.x - angular_acc.x);
+		desired_body_torque.y = filtered_body_torque.y + Ixx * (desired_angular_acc.y - angular_acc.y);
+		desired_body_torque.z = filtered_body_torque.z + Izz * (desired_angular_acc.z - angular_acc.z);
+	  }
+	  
+    }
+
+    if (external_control)  control->thrustSi = thrust_ext; else control->thrustSi = 0;
+
+    if (control->thrustSi > 0) {
+        control->torqueX = desired_body_torque.x;
+        control->torqueY = desired_body_torque.y;
+        control->torqueZ = desired_body_torque.z;
+
+    } else {
+        control->torqueX = 0;
+        control->torqueY = 0;
+        control->torqueZ = 0;
+    }
+
+    cmd_thrust = thrust_ext;
+    cmd_roll = desired_body_torque.x;
+    cmd_pitch = desired_body_torque.y;
+    cmd_yaw = desired_body_torque.z;
+    r_roll = radians(sensors->gyro.x);
+    r_pitch = -radians(sensors->gyro.y);
+    r_yaw = radians(sensors->gyro.z);
+    accelz = sensors->acc.z;
 
 }
 
-/**
- * Tuning settings for INDI controller for the attitude
- * and accelerations of the Crazyflie
- */
+PARAM_GROUP_START(indi)
+PARAM_ADD(PARAM_UINT8, external_control, &external_control)
+PARAM_ADD(PARAM_FLOAT, kw, &kw)
+PARAM_ADD(PARAM_FLOAT, fc, &filter_cutoff)
+PARAM_ADD(PARAM_FLOAT, Ixx, &Ixx)
+PARAM_ADD(PARAM_FLOAT, Izz, &Izz)
+PARAM_GROUP_STOP(indi)
 
-PARAM_GROUP_START(ctrlINDI)
-/**
- * @brief INDI Minimum thrust threshold [motor units]
- */
-PARAM_ADD(PARAM_FLOAT, thrust_threshold, &thrust_threshold)
-/**
- * @brief INDI bounding for control input [motor units]
- */
-PARAM_ADD(PARAM_FLOAT, bound_ctrl_input, &bound_control_input)
-
-/**
- * @brief INDI Controller effeciveness G1 p
- */
-PARAM_ADD(PARAM_FLOAT, g1_p, &indi.g1.p)
-/**
- * @brief INDI Controller effectiveness G1 q
- */
-PARAM_ADD(PARAM_FLOAT, g1_q, &indi.g1.q)
-/**
- * @brief INDI Controller effectiveness G1 r
- */
-PARAM_ADD(PARAM_FLOAT, g1_r, &indi.g1.r)
-/**
- * @brief INDI Controller effectiveness G2
- */
-PARAM_ADD(PARAM_FLOAT, g2, &indi.g2)
-
-/**
- * @brief INDI proportional gain, attitude error p
- */
-PARAM_ADD(PARAM_FLOAT, ref_err_p, &indi.reference_acceleration.err_p)
-/**
- * @brief INDI proportional gain, attitude error q
- */
-PARAM_ADD(PARAM_FLOAT, ref_err_q, &indi.reference_acceleration.err_q)
-/**
- * @brief INDI proportional gain, attitude error r
- */
-PARAM_ADD(PARAM_FLOAT, ref_err_r, &indi.reference_acceleration.err_r)
-
-/**
- * @brief INDI proportional gain, attitude rate error p
- */
-PARAM_ADD(PARAM_FLOAT, ref_rate_p, &indi.reference_acceleration.rate_p)
-/**
- * @brief INDI proportional gain, attitude rate error q
- */
-PARAM_ADD(PARAM_FLOAT, ref_rate_q, &indi.reference_acceleration.rate_q)
-/**
- * @brief INDI proportional gain, attitude rate error r
- */
-PARAM_ADD(PARAM_FLOAT, ref_rate_r, &indi.reference_acceleration.rate_r)
-
-/**
- * @brief INDI actuator dynamics parameter p
- */
-PARAM_ADD(PARAM_FLOAT, act_dyn_p, &indi.act_dyn.p)
-/**
- * @brief INDI actuator dynamics parameter q
- */
-PARAM_ADD(PARAM_FLOAT, act_dyn_q, &indi.act_dyn.q)
-/**
- * @brief INDI actuator dynamics parameter r
- */
-PARAM_ADD(PARAM_FLOAT, act_dyn_r, &indi.act_dyn.r)
-
-/**
- * @brief INDI Filtering for the raw angular rates [Hz]
- */
-PARAM_ADD(PARAM_FLOAT, filt_cutoff, &indi.filt_cutoff)
-/**
- * @brief INDI Filtering for the raw angular rates [Hz]
- */
-PARAM_ADD(PARAM_FLOAT, filt_cutoff_r, &indi.filt_cutoff_r)
-
-/**
- * @brief Activate INDI for position control
- */
-PARAM_ADD(PARAM_UINT8, outerLoopActive, &outerLoopActive)
-
-PARAM_GROUP_STOP(ctrlINDI)
 
 LOG_GROUP_START(ctrlINDI)
-/**
- * @brief INDI Thrust motor command [motor units]
- */
-LOG_ADD(LOG_FLOAT, cmd_thrust, &indi.thrust)
-/**
- * @brief INDI Roll motor command [motor units]
- */
-LOG_ADD(LOG_FLOAT, cmd_roll, &indi.u_in.p)
-/**
- * @brief INDI Pitch motor command [motor units]
- */
-LOG_ADD(LOG_FLOAT, cmd_pitch, &indi.u_in.q)
-/**
- * @brief INDI Yaw motor command [motor units]
- */
-LOG_ADD(LOG_FLOAT, cmd_yaw, &indi.u_in.r)
 
-/**
- * @brief INDI unfiltered Gyroscope roll rate measurement (only factory filter and 2 pole low-pass filter) [rad/s]
- */
-LOG_ADD(LOG_FLOAT, r_roll, &body_rates.p)
-/**
- * @brief INDI unfiltered Gyroscope pitch rate measurement (only factory filter and 2 pole low-pass filter) [rad/s]
- */
-LOG_ADD(LOG_FLOAT, r_pitch, &body_rates.p)
-/**
- * @brief INDI unfiltered Gyroscope yaw rate measurement (only factory filter and 2 pole low-pass filter) [rad/s]
- */
-LOG_ADD(LOG_FLOAT, r_yaw, &body_rates.p)
+LOG_ADD(LOG_FLOAT, cmd_thrust, &cmd_thrust)
+LOG_ADD(LOG_FLOAT, cmd_roll, &cmd_roll)
+LOG_ADD(LOG_FLOAT, cmd_pitch, &cmd_pitch)
+LOG_ADD(LOG_FLOAT, cmd_yaw, &cmd_yaw)
+LOG_ADD(LOG_FLOAT, m1f, &rotor_speed_filters[0].o[0])
+LOG_ADD(LOG_FLOAT, m2f, &rotor_speed_filters[1].o[0])
+LOG_ADD(LOG_FLOAT, m3f, &rotor_speed_filters[2].o[0])
+LOG_ADD(LOG_FLOAT, m4f, &rotor_speed_filters[3].o[0])
+LOG_ADD(LOG_FLOAT, ctx, &computed_body_torque.x)
+LOG_ADD(LOG_FLOAT, cty, &computed_body_torque.y)
+LOG_ADD(LOG_FLOAT, ctz, &computed_body_torque.z)
+LOG_ADD(LOG_FLOAT, ftx, &filtered_body_torque.x)
+LOG_ADD(LOG_FLOAT, fty, &filtered_body_torque.y)
+LOG_ADD(LOG_FLOAT, ftz, &filtered_body_torque.z)
 
-/**
- * @brief INDI roll motor command propagated through motor dynamics [motor units]
- */
-LOG_ADD(LOG_FLOAT, u_act_dyn_p, &indi.u_act_dyn.p)
-/**
- * @brief INDI pitch motor command propagated through motor dynamics [motor units]
- */
-LOG_ADD(LOG_FLOAT, u_act_dyn_q, &indi.u_act_dyn.q)
-/**
- * @brief INDI yaw motor command propagated through motor dynamics [motor units]
- */
-LOG_ADD(LOG_FLOAT, u_act_dyn_r, &indi.u_act_dyn.r)
-
-/**
- * @brief INDI roll motor command increment [motor units]
- */
-LOG_ADD(LOG_FLOAT, du_p, &indi.du.p)
-/**
- * @brief INDI pitch motor command increment [motor units]
- */
-LOG_ADD(LOG_FLOAT, du_q, &indi.du.q)
-/**
- * @brief INDI yaw motor command increment [motor units]
- */
-LOG_ADD(LOG_FLOAT, du_r, &indi.du.r)
-
-/**
- * @brief INDI reference angular acceleration roll (sometimes named virtual input in INDI papers) [rad/s^2]
- */
-LOG_ADD(LOG_FLOAT, ang_accel_ref_p, &indi.angular_accel_ref.p)
-/**
- * @brief INDI reference angular acceleration pitch (sometimes named virtual input in INDI papers) [rad/s^2]
- */
-LOG_ADD(LOG_FLOAT, ang_accel_ref_q, &indi.angular_accel_ref.q)
-/**
- * @brief INDI reference angular acceleration yaw (sometimes named virtual input in INDI papers) [rad/s^2]
- */
-LOG_ADD(LOG_FLOAT, ang_accel_ref_r, &indi.angular_accel_ref.r)
-
-/**
- * @brief INDI derived angular acceleration from filtered gyroscope measurement, roll [rad/s^2]
- */
-LOG_ADD(LOG_FLOAT, rate_d[0], &indi.rate_d[0])
-/**
- * @brief INDI derived angular acceleration from filtered gyroscope measurement, pitch [rad/s^2]
- */
-LOG_ADD(LOG_FLOAT, rate_d[1], &indi.rate_d[1])
-/**
- * @brief INDI derived angular acceleration from filtered gyroscope measurement, yaw [rad/s^2]
- */
-LOG_ADD(LOG_FLOAT, rate_d[2], &indi.rate_d[2])
-
-/**
- * @brief INDI filtered (8Hz low-pass) roll motor input from previous time step [motor units]
- */
-LOG_ADD(LOG_FLOAT, uf_p, &indi.u[0].o[0])
-/**
- * @brief INDI filtered (8Hz low-pass) pitch motor input from previous time step [motor units]
- */
-LOG_ADD(LOG_FLOAT, uf_q, &indi.u[1].o[0])
-/**
- * @brief INDI filtered (8Hz low-pass) yaw motor input from previous time step [motor units]
- */
-LOG_ADD(LOG_FLOAT, uf_r, &indi.u[2].o[0])
-
-/**
- * @brief INDI filtered gyroscope measurement (8Hz low-pass), roll [rad/s]
- */
-LOG_ADD(LOG_FLOAT, Omega_f_p, &indi.rate[0].o[0])
-/**
- * @brief INDI filtered gyroscope measurement (8Hz low-pass), pitch [rad/s]
- */
-LOG_ADD(LOG_FLOAT, Omega_f_q, &indi.rate[1].o[0])
-/**
- * @brief INDI filtered gyroscope measurement (8Hz low-pass), yaw [rad/s]
- */
-LOG_ADD(LOG_FLOAT, Omega_f_r, &indi.rate[2].o[0])
-
-/**
- * @brief INDI desired attitude angle from outer loop, roll [rad]
- */
-LOG_ADD(LOG_FLOAT, n_p, &attitudeDesired.roll)
-/**
- * @brief INDI desired attitude angle from outer loop, pitch [rad]
- */
-LOG_ADD(LOG_FLOAT, n_q, &attitudeDesired.pitch)
-/**
- * @brief INDI desired attitude angle from outer loop, yaw [rad]
- */
-LOG_ADD(LOG_FLOAT, n_r, &attitudeDesired.yaw)
 
 LOG_GROUP_STOP(ctrlINDI)

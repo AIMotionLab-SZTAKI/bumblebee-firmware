@@ -24,7 +24,6 @@
 #include "motors.h"
 
 #define ATTITUDE_UPDATE_DT    (float)(1.0f/ATTITUDE_RATE)
-#define COMMUNICATION_RATE RATE_100_HZ
 
 static attitude_t attitudeDesired;
 static attitude_t rateDesired;

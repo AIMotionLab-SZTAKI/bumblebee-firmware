@@ -355,6 +355,11 @@ void motorsSetRatio(uint32_t id, uint16_t ratio);
 uint16_t motorsGetRatio(uint32_t id);
 
 /**
+ * Get the RPM of the motor 'id'. Returns UINT16_MAX if bidirectional DSHOT is not enabled or RPM is invalid.
+ */
+uint16_t motorsGetRPM(uint32_t id);
+
+/**
  * FreeRTOS Task to test the Motors driver
  */
 void motorsTestTask(void* params);
