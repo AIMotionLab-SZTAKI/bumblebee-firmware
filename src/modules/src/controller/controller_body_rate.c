@@ -36,6 +36,7 @@ static float Izz = 0.00277;
 static float dt = ATTITUDE_UPDATE_DT;
 
 static float kw = 0.15;
+static float kw_yaw = 0.15;
 
 //static float ctrl_thrust = 0;
 
@@ -67,10 +68,10 @@ static uint8_t external_control = 0;
 
 static bool enable_uart_comm = true;
 
-static float batt_comp_a = -0.1245;  // with kR = 0.6: -0.1205
-static float batt_comp_b = 2.768;  // with kR = 0.6: 2.6802
+// static float batt_comp_a = -0.1245;  // with kR = 0.6: -0.1205
+// static float batt_comp_b = 2.768;  // with kR = 0.6: 2.6802
 
-static float supplyVoltage;
+// static float supplyVoltage;
 
 // ang_vel = a * pwm + b
 //static float pwmToAngVelA = 0.065769f;
@@ -81,7 +82,7 @@ static float supplyVoltage;
 
 void controllerBodyRateInit(void)
 {
-  supplyVoltage = pmGetBatteryVoltage();
+  // supplyVoltage = pmGetBatteryVoltage();
 }
 
 bool controllerBodyRateTest(void)
@@ -124,11 +125,11 @@ void controllerBodyRate(control_t *control, const setpoint_t *setpoint,
           }
         }
         // convert thrust from N to PWM
-        supplyVoltage =  0.99f * supplyVoltage + 0.01f * pmGetBatteryVoltage();  
-        float mass_ratio = batt_comp_a * supplyVoltage + batt_comp_b;
+        // supplyVoltage =  0.99f * supplyVoltage + 0.01f * pmGetBatteryVoltage();  
+        // float mass_ratio = batt_comp_a * supplyVoltage + batt_comp_b;
         //float thrust_battery_corrected = thrust_ext * mass_ratio;
         //thrust_ext = getThrustPwm(thrust_battery_corrected);
-        thrust_ext *= mass_ratio;
+        // thrust_ext *= mass_ratio;
       } else if (external_control) { // communication timeout but still trying to control externally
         fail_counter += 11;
       }
@@ -221,6 +222,8 @@ void getRateDesired(attitude_t *rate) {
 
 PARAM_GROUP_START(bodyrate)
 PARAM_ADD(PARAM_UINT8, external_control, &external_control)
+PARAM_ADD(PARAM_FLOAT, kw, &kw)
+PARAM_ADD(PARAM_FLOAT, kw_yaw, &kw_yaw)
 PARAM_GROUP_STOP(bodyrate)
 
 LOG_GROUP_START(ctrlBR)
