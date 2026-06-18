@@ -40,6 +40,7 @@ typedef enum {
   ControllerTypeSwitch,
   ControllerTypeLqr,
   ControllerTypeBodyRate,
+  ControllerTypeYoyoGeom,
   ControllerTypeLee,
 #ifdef CONFIG_CONTROLLER_OOT
   ControllerTypeOot,

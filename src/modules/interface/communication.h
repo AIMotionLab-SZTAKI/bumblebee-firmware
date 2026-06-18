@@ -12,6 +12,7 @@
 #define CONTROL_PACKET 0x01
 #define TRAJECTORY_PACKET 0x02
 #define FORWARDED_CONTROL_PACKET 0x03
+#define YOYO_REF_PACKET 0x04
 
 
 typedef enum {
@@ -42,3 +43,5 @@ void handle_control_packet(uart_packet *packet, float* thrustDesired, float* rol
 void handle_forwarded_packet(uart_packet *packet, float* thrustDesired, float* rollRateDesired, 
                              float* pitchRateDesired, float* yawRateDesired, float* status,
                              float* com_shift_x, float* com_shift_y);
+
+void handle_yoyo_ref_packet(uart_packet *packet, float* pos_ref, float* vel_ref, float* acc_ref, float* status_ext);

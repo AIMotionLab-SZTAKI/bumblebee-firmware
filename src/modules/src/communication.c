@@ -265,6 +265,10 @@ static void communicationTask(void* param)
         case FORWARDED_CONTROL_PACKET:
           // we handle it later, todo: refactor other parts of the code accordingly
           break;
+        
+        case YOYO_REF_PACKET:
+          // we handle it later, todo: refactor other parts of the code accordingly
+          break;
 
         default:
           DEBUG_PRINT("Unknown service type.\n");
@@ -379,6 +383,39 @@ void createForwardPacket(uart_packet* packet, va_list* args) {
   packet->payload[packet->payloadLength] = calcCrc(packet);
 }
 
+void createYoyoRefPacket(uart_packet* packet, va_list* args) {
+  float* dummy_1 = va_arg(*args, float*);
+  float* dummy_2 = va_arg(*args, float*);
+  float* dummy_3 = va_arg(*args, float*);
+  float* dummy_4 = va_arg(*args, float*);
+
+  ASSERT(dummy_1 != NULL && dummy_2 != NULL && dummy_3 != NULL && dummy_4 != NULL);
+
+  uint8_t payloadLength = sizeof(*dummy_1) + sizeof(*dummy_2) + sizeof(*dummy_3) + sizeof(*dummy_4);
+  ASSERT(payloadLength <= MAX_PAYLOAD_LENGTH);
+
+  packet->start = START_BYTE;  
+  packet->serviceType = YOYO_REF_PACKET;
+  packet->payloadLength = payloadLength;
+
+  unsigned long ptr = 0;
+
+  memcpy(&packet->payload[ptr], dummy_1, sizeof(*dummy_1));
+  ptr += sizeof(*dummy_1);
+
+  memcpy(&packet->payload[ptr], dummy_2, sizeof(*dummy_2));
+  ptr += sizeof(*dummy_2);
+
+  memcpy(&packet->payload[ptr], dummy_3, sizeof(*dummy_3));
+  ptr += sizeof(*dummy_3);
+
+  memcpy(&packet->payload[ptr], dummy_4, sizeof(*dummy_4));
+
+  // Put the crc byte at the end of the payload.
+  // This is necessary to ensure that only the required amount of data is sent through the UART.
+  packet->payload[packet->payloadLength] = calcCrc(packet);
+    
+}
 
 
 void sendDataUART(const char *format, ...) {
@@ -407,6 +444,11 @@ void sendDataUART(const char *format, ...) {
       case 'F': { 
         // Forward (currently dummy values) 
         createForwardPacket(&packet, &args);
+        break;
+      }
+      case 'Y': {
+        // Yoyo (currently dummy values)
+        createYoyoRefPacket(&packet, &args);
         break;
       }
       default:
@@ -481,3 +523,16 @@ void handle_forwarded_packet(uart_packet *packet, float* thrustDesired, float* r
   ptr += sizeof(*com_shift_x);
   memcpy(com_shift_y, &packet->payload[ptr], sizeof(*com_shift_y));
 }
+
+void handle_yoyo_ref_packet(uart_packet *packet, float* pos_ref, float* vel_ref, float* acc_ref, float* status) {
+  unsigned long ptr = 0;
+
+  memcpy(pos_ref, &packet->payload[ptr], sizeof(*pos_ref));
+  ptr += sizeof(*pos_ref);
+  memcpy(vel_ref, &packet->payload[ptr], sizeof(*vel_ref));
+  ptr += sizeof(*vel_ref);
+  memcpy(acc_ref, &packet->payload[ptr], sizeof(*acc_ref));
+  ptr += sizeof(*acc_ref);
+  memcpy(status, &packet->payload[ptr], sizeof(*status));
+}
+

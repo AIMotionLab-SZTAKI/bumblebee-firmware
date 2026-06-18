@@ -14,6 +14,7 @@
 #include "controller_lqr.h"
 #include "controller_switch.h"
 #include "controller_body_rate.h"
+#include "controller_yoyo_geom.h"
 
 #include "autoconf.h"
 
@@ -41,6 +42,7 @@ static ControllerFcns controllerFunctions[] = {
   {.init = controllerSwitchInit, .test = controllerSwitchTest, .update = controllerSwitch, .name = "LQR-TO-GEOM"},
   {.init = controllerLqrInit, .test = controllerLqrTest, .update = controllerLqr, .name = "LQR"},
   {.init = controllerBodyRateInit, .test = controllerBodyRateTest, .update = controllerBodyRate, .name = "Bodyrate"},
+  {.init = controllerYoyoGeomInit, .test = controllerYoyoGeomTest, .update = controllerYoyoGeom, .name = "YoyoGeom"},
   {.init = controllerLeeFirmwareInit, .test = controllerLeeFirmwareTest, .update = controllerLeeFirmware, .name = "Lee"},
   #ifdef CONFIG_CONTROLLER_OOT
   {.init = controllerOutOfTreeInit, .test = controllerOutOfTreeTest, .update = controllerOutOfTree, .name = "OutOfTree"},
@@ -79,6 +81,8 @@ void controllerInit(ControllerType controller) {
     #define CONTROLLER ControllerTypeSwitch
   #elif defined(CONFIG_CONTROLLER_BODY_RATE)
     #define CONTROLLER ControllerTypeBodyRate
+  #elif defined(CONFIG_CONTROLLER_YOYO_GEOM)
+    #define CONTROLLER ControllerTypeYoyoGeom
   #elif defined(CONFIG_CONTROLLER_LEE)
     #define CONTROLLER ControllerTypeLee
   #elif defined(CONFIG_CONTROLLER_OOT)
