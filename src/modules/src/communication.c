@@ -39,6 +39,12 @@
 #define QUEUE_LENGTH 1
 #define QUEUE_ITEM_SIZE (sizeof(uart_packet))
 
+// sendDataUART() uses xQueueOverwrite() on txQueue, which is only defined for
+// queues of length one.
+#if QUEUE_LENGTH != 1
+#error "QUEUE_LENGTH must be 1, see sendDataUART()"
+#endif
+
 
 static bool isInit;
 static bool shutdownTransport = false;
@@ -56,6 +62,11 @@ static xQueueHandle rxQueue;
 CommState commState = SYNC;
 
 static int comm_timeout = 20;
+
+// Back-off between two sync attempts while no peer is answering on the UART.
+// Without it the sync handshake runs at the rate the controller produces
+// packets, which floods the console and starves the syslink task.
+static int sync_retry_delay = 100;
 
 STATIC_MEM_TASK_ALLOC(communicationTask, COMMUNICATION_TASK_STACKSIZE);
 
@@ -194,7 +205,7 @@ static void communicationTask(void* param)
 
     if (commState == SYNC) {
 
-      DEBUG_PRINT("Sending sync bytes\n");
+      // DEBUG_PRINT("Sending sync bytes\n");
       uart2SendData(sizeof(SYNC_BYTE), (uint8_t *) &SYNC_BYTE);
       uart2GetDataWithTimeout(1, &syncBuffer, M2T(comm_timeout));
 
@@ -202,10 +213,16 @@ static void communicationTask(void* param)
         commState = CONNECTED;
         DEBUG_PRINT("Comm state: [CONNECTED]\n");
       }
+      else {
+        // No peer yet. Leave txQueue alone, the producer keeps overwriting it
+        // with the freshest packet, and back off so the handshake does not run
+        // at the rate the controller produces packets.
+        vTaskDelay(M2T(sync_retry_delay));
+        continue;
+      }
     }
 
 
-    
     if (xQueueReceive(txQueue, &txPacket, portMAX_DELAY) == pdTRUE && commState == CONNECTED) {
 
       //TickType_t timeStart = xTaskGetTickCount();
@@ -458,8 +475,11 @@ void sendDataUART(const char *format, ...) {
 
   xSemaphoreGive(pckDataMutex);
 
+  // This runs in the stabilizer task, so it must never block: overwrite the
+  // pending packet instead of waiting for the communication task to pick it up.
+  // The freshest packet is the one we want to send anyway.
   if (txQueue) {
-    xQueueSend(txQueue, &packet, portMAX_DELAY);
+    xQueueOverwrite(txQueue, &packet);
   }
 
   va_end(args);
