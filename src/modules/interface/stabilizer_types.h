@@ -267,6 +267,15 @@ typedef struct setpoint_s {
   float dalpha; // rad/s
   float dbeta; // rad/s
 
+  // External body rate + thrust command (e.g. from an off-board MPC), see mpcDecoder in crtp_commander_generic.c.
+  // If active, thrust is in N and attitudeRate holds the commanded body rates.
+  struct {
+    bool active;
+    uint8_t status;    // nonzero: the sender marked the command as invalid
+    float comShiftX;   // m
+    float comShiftY;   // m
+  } mpc;
+
   struct {
     stab_mode_t x;
     stab_mode_t y;

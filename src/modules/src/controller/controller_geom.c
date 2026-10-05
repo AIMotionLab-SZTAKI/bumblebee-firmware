@@ -10,11 +10,10 @@ Geometric tracking controller.
 #include "stabilizer.h"
 #include "physicalConstants.h"
 #include "controller_geom.h"
-#include "pm.h"
 
 // Inertia matrix components
-static float Ixx = 0.0015;
-static float Izz = 0.00277;
+static float Ixx = 0.0025;
+static float Izz = 0.0044;
 
 static float dt = (float)(1.0f/ATTITUDE_RATE);
 
@@ -64,24 +63,12 @@ static float ctrl_thrust = 0;
 static struct quat q;
 static struct vec eR, ew, wd, er, ev, prev_wd;
 
-static float drone_mass = 0.635;
-static float payload_mass = 0.0736;
-
-static float real_mass = 0.635;
-
-static float measured_mass = 0;
+static float drone_mass = 0.69;
 
 static float psi = 0;
 
-static float batt_comp_a = -0.1245;  // with kR = 0.6: -0.1205
-static float batt_comp_b = 2.768;  // with kR = 0.6: 2.6802
-
-static float supplyVoltage;
-
 void controllerGeomReset(void)
 {
-  real_mass = drone_mass;
-  supplyVoltage = pmGetBatteryVoltage();
 }
 
 void controllerGeomInit(void)
@@ -103,22 +90,13 @@ void controllerGeom(control_t *control, const setpoint_t *setpoint,
       return;
     }
 
-  if (payload_mass < 0.0f) {
-    payload_mass = 0.0f;
-  } else if (payload_mass > 0.15f) {
-    payload_mass = 0.15f;
-  }
-
 
   //Enter force-torque control, as is natural with the geometric control
   control->controlMode = controlModeForceTorque;
   //Log variable
   ctrlMode = control->controlMode;
   //After this, we ought to work only with SI units, as force-torque control takes SI inputs
-  supplyVoltage = 0.99f * supplyVoltage + 0.01f * pmGetBatteryVoltage();  
-  float mass_ratio = batt_comp_a * supplyVoltage + batt_comp_b;  
-  float g_vehicleMass = real_mass * mass_ratio;
-  float vehicleWeight_N = g_vehicleMass * GRAVITY_MAGNITUDE; //in N
+  float vehicleWeight_N = drone_mass * GRAVITY_MAGNITUDE; //in N
 
   //Log variables
   setPointMode_x = setpoint->mode.x;
@@ -174,24 +152,16 @@ void controllerGeom(control_t *control, const setpoint_t *setpoint,
     target_thrust.x = -sinf(radians(setpoint->attitude.pitch))*vehicleWeight_N;
     target_thrust.y = -sinf(radians(setpoint->attitude.roll))*vehicleWeight_N;
     if (setpoint->mode.z == modeAbs) {
-      target_thrust.z = -kr*er.z - kv*ev.z + g_vehicleMass * GRAVITY_MAGNITUDE;
+      target_thrust.z = -kr*er.z - kv*ev.z + drone_mass * GRAVITY_MAGNITUDE;
     }
     else {
       target_thrust.z = vehicleWeight_N;
     }
   } else {
     //In normal operation, this is the code path that we follow
-    target_thrust.x = -kr*er.x - kv*ev.x + g_vehicleMass*setpoint->acceleration.x;
-    target_thrust.y = -kr*er.y - kv*ev.y + g_vehicleMass*setpoint->acceleration.y;
-    target_thrust.z = -10.0f*er.z - 5.0f*ev.z + g_vehicleMass*(setpoint->acceleration.z + GRAVITY_MAGNITUDE);
-    // measured mass
-    measured_mass = target_thrust.z / (setpoint->acceleration.z + GRAVITY_MAGNITUDE) / mass_ratio;
-    if (measured_mass > 0.7f){
-      real_mass = drone_mass + payload_mass;
-    }
-    else if (measured_mass < 0.67f) {
-      real_mass = drone_mass;
-    }
+    target_thrust.x = -kr*er.x - kv*ev.x + drone_mass*setpoint->acceleration.x;
+    target_thrust.y = -kr*er.y - kv*ev.y + drone_mass*setpoint->acceleration.y;
+    target_thrust.z = -10.0f*er.z - 5.0f*ev.z + drone_mass*(setpoint->acceleration.z + GRAVITY_MAGNITUDE);
   }  
   //Because the desired pose is not explicitly given (only in yaw), we construct it using
   //the differential flatness of the trajectory, from the yaw
@@ -256,7 +226,7 @@ void controllerGeom(control_t *control, const setpoint_t *setpoint,
   diff_part.z = Izz*diff_part.z;
 
   //Torque component relating to angular acceleration
-  struct vec cross = vcross(w, mkvec(Ixx*w.x, Ixx*w.x, Izz*w.z));
+  struct vec cross = vcross(w, mkvec(Ixx*w.x, Ixx*w.y, Izz*w.z));
   //Torque in each direction [Nm] Uncapped
   M.x = cross.x - kR * eR.x - kw * ew.x - diff_part.x;
   M.y = cross.y - kR * eR.y - kw * ew.y - diff_part.y;
@@ -307,10 +277,7 @@ PARAM_ADD(PARAM_FLOAT, kv, &kv)
 PARAM_ADD(PARAM_FLOAT, kR, &kR)
 PARAM_ADD(PARAM_FLOAT, kw, &kw)
 PARAM_ADD(PARAM_FLOAT, drone_mass, &drone_mass)
-PARAM_ADD(PARAM_FLOAT, payload_mass, &payload_mass)
 PARAM_ADD(PARAM_FLOAT, ctrl_thrust, &ctrl_thrust)
-PARAM_ADD(PARAM_FLOAT, batt_comp_a, &batt_comp_a)
-PARAM_ADD(PARAM_FLOAT, batt_comp_b, &batt_comp_b)
 PARAM_ADD(PARAM_FLOAT, x, &x)
 PARAM_ADD(PARAM_FLOAT, y, &y)
 PARAM_ADD(PARAM_FLOAT, z, &z)
@@ -348,7 +315,4 @@ LOG_ADD(LOG_UINT8, pitch_Mode, &setPointMode_pitch)
 LOG_ADD(LOG_UINT8, yaw_Mode, &setPointMode_yaw)
 LOG_ADD(LOG_UINT8, quat_Mode, &setPointMode_quat)
 LOG_ADD(LOG_UINT8, ctrlMode, &ctrlMode)
-LOG_ADD(LOG_FLOAT, measured_mass, &measured_mass)
-LOG_ADD(LOG_FLOAT, real_mass, &real_mass)
-LOG_ADD(LOG_FLOAT, voltage, &supplyVoltage)
 LOG_GROUP_STOP(ctrlGeom)

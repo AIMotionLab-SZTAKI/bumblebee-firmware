@@ -31,6 +31,7 @@
 #include "cfassert.h"
 #include "commander.h"
 #include "crtp.h"
+#include "controller_body_rate.h"
 
 
 static bool isInit;
@@ -113,12 +114,16 @@ static void commanderCrtpCB(CRTPPacket* pk)
   static setpoint_t setpoint;
 
   if(pk->port == CRTP_PORT_SETPOINT && pk->channel == 0) {
+    setpoint.mpc.active = false;  // the setpoint is shared with the generic decoders, which may have set it
     crtpCommanderRpytDecodeSetpoint(&setpoint, pk);
     commanderSetSetpoint(&setpoint, COMMANDER_PRIORITY_CRTP);
   } else if (pk->port == CRTP_PORT_SETPOINT_GENERIC) {
     switch (pk->channel) {
     case SET_SETPOINT_CHANNEL:
       crtpCommanderGenericDecodeSetpoint(&setpoint, pk);
+      if (setpoint.mpc.active && !controllerBodyRateAcceptMpcSetpoint()) {
+        break;
+      }
       commanderSetSetpoint(&setpoint, COMMANDER_PRIORITY_CRTP);
       break;
     case META_COMMAND_CHANNEL: {

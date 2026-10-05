@@ -75,6 +75,7 @@ enum packet_type {
   zDistanceType           = 9,
   hoverType               = 10,
   manualType              = 11,
+  mpcType                 = 20,
 };
 
 /* ---===== 2 - Decoding functions =====--- */
@@ -88,6 +89,44 @@ enum packet_type {
 static void stopDecoder(setpoint_t *setpoint, uint8_t type, const void *data, size_t datalen)
 {
   return;
+}
+
+/* mpcDecoder
+ * Body rate + thrust command of an off-board controller (e.g. MPC), streamed through the Skybrush server.
+ * Consumed by the Bodyrate controller when bodyrate.input_src = 1.
+ * Rates follow the same convention as the UART path: roll, pitch (inverted), yaw in deg/s.
+ */
+struct mpcPacket_s {
+  uint8_t status;     // nonzero: invalid command
+  float thrust;       // N
+  float rollRate;     // deg/s
+  float pitchRate;    // deg/s
+  float yawRate;      // deg/s
+  float comShiftX;    // m
+  float comShiftY;    // m
+} __attribute__((packed));
+static void mpcDecoder(setpoint_t *setpoint, uint8_t type, const void *data, size_t datalen)
+{
+  const struct mpcPacket_s *values = data;
+
+  ASSERT(datalen == sizeof(struct mpcPacket_s));
+
+  setpoint->mode.x = modeDisable;
+  setpoint->mode.y = modeDisable;
+  setpoint->mode.z = modeDisable;
+  setpoint->mode.roll = modeVelocity;
+  setpoint->mode.pitch = modeVelocity;
+  setpoint->mode.yaw = modeVelocity;
+
+  setpoint->thrust = values->thrust;
+  setpoint->attitudeRate.roll = values->rollRate;
+  setpoint->attitudeRate.pitch = values->pitchRate;
+  setpoint->attitudeRate.yaw = values->yawRate;
+
+  setpoint->mpc.active = true;
+  setpoint->mpc.status = values->status;
+  setpoint->mpc.comShiftX = values->comShiftX;
+  setpoint->mpc.comShiftY = values->comShiftY;
 }
 
 struct manualPacket_s {
@@ -535,6 +574,7 @@ const static packetDecoder_t packetDecoders[] = {
   [zDistanceType]           = zDistanceDecoder,
   [hoverType]               = hoverDecoder,
   [manualType]              = manualDecoder,
+  [mpcType]                 = mpcDecoder,
 };
 
 /* Decoder switch */

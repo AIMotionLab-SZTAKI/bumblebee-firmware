@@ -61,7 +61,7 @@ static float pwmToAngVelB = -131.538;
 
 // thrust = c * signed_sum(ang_vel^2)
 // static float angVelToThrust = 9.3945e-7f;  // old value: 9.3945e-7f; new value: 8.6584e-7f;
-static float angVelToThrust = 1.26e-6f;  // old value: 9.3945e-7f; new value: 8.6584e-7f;
+static float angVelToThrust = 1.26e-6f;  // old value: 9.3945e-7f; new value: 1.215e-6f;
 
 // torque = a/c * signed_sum(thrust) + b/c
 // static float thrustToTorqueA = 5.5939e-7f;
@@ -265,7 +265,7 @@ void powerDistribution(const control_t *control, motors_thrust_uncapped_t* motor
 bool powerDistributionCap(const motors_thrust_uncapped_t* motorThrustBatCompUncapped, motors_thrust_pwm_t* motorPwm)
 {
   // const int32_t maxAllowedThrust = UINT16_MAX;
-  const int32_t maxAllowedThrust = 30000;
+  const int32_t maxAllowedThrust = 35000;
   bool isCapped = false;
 
   // Find highest thrust
@@ -339,6 +339,7 @@ PARAM_ADD(PARAM_FLOAT, pwmToThrustB, &pwmToThrustB)*/
  */
 PARAM_ADD(PARAM_FLOAT, armLength, &armLength)
 PARAM_ADD(PARAM_FLOAT, thrustToTorque, &thrustToTorque)
+PARAM_ADD(PARAM_FLOAT, angVelToThrust, &angVelToThrust)
 PARAM_GROUP_STOP(quadSysId)
 
 
