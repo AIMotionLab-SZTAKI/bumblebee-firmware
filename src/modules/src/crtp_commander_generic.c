@@ -33,6 +33,7 @@
 #include "param.h"
 #include "crtp.h"
 #include "num.h"
+#include "math3d.h"
 #include "quatcompress.h"
 #include "FreeRTOS.h"
 
@@ -76,6 +77,7 @@ enum packet_type {
   hoverType               = 10,
   manualType              = 11,
   mpcType                 = 20,
+  mpcIndiType             = 21,
 };
 
 /* ---===== 2 - Decoding functions =====--- */
@@ -127,6 +129,48 @@ static void mpcDecoder(setpoint_t *setpoint, uint8_t type, const void *data, siz
   setpoint->mpc.status = values->status;
   setpoint->mpc.comShiftX = values->comShiftX;
   setpoint->mpc.comShiftY = values->comShiftY;
+}
+
+/* mpcIndiDecoder
+ * Thrust + body rate + angular acceleration feedforward of an off-board MPC, for an onboard INDI.
+ * All SI and in the FLU body frame (no sign flips). The rates are also written to attitudeRate in the type 20
+ * convention (deg/s, pitch inverted), so that the Bodyrate controller can fly type 21 as well (ignoring angAccFF).
+ * omegaRef is the predicted rate at the time the command takes effect; between commands the INDI should
+ * propagate it as omegaRef + angAccFF * (time since arrival).
+ */
+struct mpcIndiPacket_s {
+  uint8_t status;     // nonzero: invalid command
+  float thrust;       // N
+  float omega[3];     // rad/s
+  float alpha[3];     // rad/s^2
+} __attribute__((packed));
+_Static_assert(sizeof(struct mpcIndiPacket_s) == 29, "type 21 payload must fill a CRTP packet with the type byte");
+_Static_assert(sizeof(struct mpcIndiPacket_s) + 1 <= CRTP_MAX_DATA_SIZE, "type 21 packet exceeds CRTP size");
+static void mpcIndiDecoder(setpoint_t *setpoint, uint8_t type, const void *data, size_t datalen)
+{
+  const struct mpcIndiPacket_s *values = data;
+
+  ASSERT(datalen == sizeof(struct mpcIndiPacket_s));
+
+  setpoint->mode.x = modeDisable;
+  setpoint->mode.y = modeDisable;
+  setpoint->mode.z = modeDisable;
+  setpoint->mode.roll = modeVelocity;
+  setpoint->mode.pitch = modeVelocity;
+  setpoint->mode.yaw = modeVelocity;
+
+  setpoint->thrust = values->thrust;
+  setpoint->attitudeRate.roll = degrees(values->omega[0]);
+  setpoint->attitudeRate.pitch = -degrees(values->omega[1]);
+  setpoint->attitudeRate.yaw = degrees(values->omega[2]);
+
+  setpoint->mpc.active = true;
+  setpoint->mpc.status = values->status;
+  setpoint->mpc.hasAngAccFF = true;
+  for (int i = 0; i < 3; i++) {
+    setpoint->mpc.omegaRef[i] = values->omega[i];
+    setpoint->mpc.angAccFF[i] = values->alpha[i];
+  }
 }
 
 struct manualPacket_s {
@@ -575,6 +619,7 @@ const static packetDecoder_t packetDecoders[] = {
   [hoverType]               = hoverDecoder,
   [manualType]              = manualDecoder,
   [mpcType]                 = mpcDecoder,
+  [mpcIndiType]             = mpcIndiDecoder,
 };
 
 /* Decoder switch */

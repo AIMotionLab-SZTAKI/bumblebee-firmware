@@ -61,6 +61,12 @@ static attitude_t rateDesired_ext;
 // static float actuatorThrust;
 static float thrust_ext;
 static float status_ext;  // status flag of external control input
+static uint8_t mpc_type;  // setpoint type of the last consumed MPC command: 20, or 21 (with angular acc. feedforward)
+static float ang_acc_ff[3];  // rad/s^2, FLU, of the last type 21 command
+// Type 21 carries the rate at the time the command takes effect (for the INDI). This P loop needs a lead instead, as
+// type 20 provides (the MPC's predicted rate one node ahead), so it extrapolates: rate + ang_acc_ff * t21_lead.
+// Without it, type 21 flights diverge (SIL). Default: NMPC node (50 ms) minus command latency (10 ms).
+static float t21_lead = 0.04f;  // s
 static int fail_counter;  // number of subsequent invalid external control inputs 
 static float com_shift_x = 0.0f;
 static float com_shift_y = 0.0f;
@@ -80,7 +86,7 @@ static bool enable_uart_comm = true;
 
 // Where the external body rate + thrust commands come from.
 // 0: UART (Raspberry Pi with its own radio), 1: CRTP setpoints of type mpc, streamed through the Skybrush server.
-static uint8_t input_src = 0;
+static uint8_t input_src = 1;
 
 // CRTP input only. While no MPC command is coming in, the drone is flown by the fallback controller, i.e. it can
 // take off, hover and land with the high-level commander. When MPC commands arrive, they take over; when they stop
@@ -268,6 +274,16 @@ static void controllerBodyRateCrtp(control_t *control, const setpoint_t *setpoin
       mpc_rx_count++;
       thrust_ext = setpoint->thrust;
       rateDesired_ext = setpoint->attitudeRate;
+      mpc_type = setpoint->mpc.hasAngAccFF ? 21 : 20;
+      for (int i = 0; i < 3; i++) {
+        ang_acc_ff[i] = setpoint->mpc.hasAngAccFF ? setpoint->mpc.angAccFF[i] : 0.0f;
+      }
+      if (setpoint->mpc.hasAngAccFF) {
+        // attitudeRate is in deg/s with pitch inverted, ang_acc_ff in rad/s^2 FLU
+        rateDesired_ext.roll += degrees(ang_acc_ff[0] * t21_lead);
+        rateDesired_ext.pitch -= degrees(ang_acc_ff[1] * t21_lead);
+        rateDesired_ext.yaw += degrees(ang_acc_ff[2] * t21_lead);
+      }
       status_ext = setpoint->mpc.status;
       com_shift_x = setpoint->mpc.comShiftX;
       com_shift_y = setpoint->mpc.comShiftY;
@@ -377,6 +393,7 @@ PARAM_ADD(PARAM_UINT8, input_src, &input_src)
 PARAM_ADD(PARAM_UINT16, mpc_timeout, &mpc_timeout_ms)
 PARAM_ADD(PARAM_FLOAT, mpc_land_vel, &mpc_land_velocity)
 PARAM_ADD(PARAM_UINT8, fallback, &fallback)
+PARAM_ADD(PARAM_FLOAT, t21_lead, &t21_lead)
 PARAM_ADD(PARAM_UINT32 | PARAM_RONLY, mpc_rx, &mpc_rx_count)  // read by the Skybrush server after a session
 PARAM_GROUP_STOP(bodyrate)
 
@@ -396,4 +413,8 @@ LOG_ADD(LOG_FLOAT, thrust, &thrust_ext)
 LOG_ADD(LOG_FLOAT, roll, &rateDesired_ext.roll)
 LOG_ADD(LOG_FLOAT, pitch, &rateDesired_ext.pitch)
 LOG_ADD(LOG_FLOAT, yaw, &rateDesired_ext.yaw)
+LOG_ADD(LOG_UINT8, type, &mpc_type)
+LOG_ADD(LOG_FLOAT, aff_x, &ang_acc_ff[0])
+LOG_ADD(LOG_FLOAT, aff_y, &ang_acc_ff[1])
+LOG_ADD(LOG_FLOAT, aff_z, &ang_acc_ff[2])
 LOG_GROUP_STOP(ctrlMpc)
