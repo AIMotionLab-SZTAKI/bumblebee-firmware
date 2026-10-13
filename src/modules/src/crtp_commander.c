@@ -31,7 +31,7 @@
 #include "cfassert.h"
 #include "commander.h"
 #include "crtp.h"
-#include "controller_body_rate.h"
+#include "mpc_input.h"
 
 
 static bool isInit;
@@ -121,7 +121,7 @@ static void commanderCrtpCB(CRTPPacket* pk)
     switch (pk->channel) {
     case SET_SETPOINT_CHANNEL:
       crtpCommanderGenericDecodeSetpoint(&setpoint, pk);
-      if (setpoint.mpc.active && !controllerBodyRateAcceptMpcSetpoint()) {
+      if (setpoint.mpc.active && !mpcInputAcceptSetpoint()) {
         break;
       }
       commanderSetSetpoint(&setpoint, COMMANDER_PRIORITY_CRTP);

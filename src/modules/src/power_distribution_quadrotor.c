@@ -244,6 +244,20 @@ static void powerDistributionForce(const control_t *control, motors_thrust_uncap
   // Not implemented yet
 }
 
+// Rotor thrusts [N] straight to PWM through the identified (rotor speed, battery voltage) -> PWM map, as the new
+// mapping of the force/torque mode. No mixing and no center of mass shift: the controller allocated already.
+static void powerDistributionMotorForces(const control_t *control, motors_thrust_uncapped_t* motorThrustUncapped) {
+  batteryVoltage = pmGetBatteryVoltage();
+  for (int motorIndex = 0; motorIndex < STABILIZER_NR_OF_MOTORS; motorIndex++) {
+    float motorForce = control->motorForces[motorIndex];
+    if (!(motorForce > 0.0f)) {  // also catches NaN
+      motorForce = 0.0f;
+    }
+    new_motor_pwm[motorIndex] = (uint16_t)poly2d_eval(sqrtf(motorForce / angVelToThrust), batteryVoltage);
+    motorThrustUncapped->list[motorIndex] = new_motor_pwm[motorIndex];
+  }
+}
+
 void powerDistribution(const control_t *control, motors_thrust_uncapped_t* motorThrustUncapped)
 {
   switch (control->controlMode) {
@@ -255,6 +269,9 @@ void powerDistribution(const control_t *control, motors_thrust_uncapped_t* motor
       break;
     case controlModeForce:
       powerDistributionForce(control, motorThrustUncapped);
+      break;
+    case controlModeMotorForces:
+      powerDistributionMotorForces(control, motorThrustUncapped);
       break;
     default:
       // Nothing here

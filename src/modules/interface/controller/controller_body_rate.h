@@ -35,12 +35,4 @@ void controllerBodyRate(control_t *control, const setpoint_t *setpoint,
                                          const state_t *state,
                                          const uint32_t tick);
 
-float getThrust(void);
-float getStatus(void);
-void getRateDesired(attitude_t *rate);
-
-// Called by the CRTP commander for every incoming MPC setpoint. Returns false while MPC setpoints are locked out
-// after an aborted MPC session (see controller_body_rate.c), in which case the setpoint must be dropped.
-bool controllerBodyRateAcceptMpcSetpoint(void);
-
 #endif //__CONTROLLER_BODY_RATE_H__

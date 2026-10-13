@@ -188,6 +188,7 @@ typedef enum control_mode_e {
   controlModeLegacy      = 0, // legacy mode with int16_t roll, pitch, yaw and float thrust
   controlModeForceTorque = 1,
   controlModeForce       = 2,
+  controlModeMotorForces = 3, // thrust of each rotor in N (motor order M1..M4), e.g. from the INDI allocation
 } control_mode_t;
 
 typedef struct control_s {
@@ -217,6 +218,9 @@ typedef struct control_s {
 
     // controlModeForce
     float normalizedForces[STABILIZER_NR_OF_MOTORS]; // 0.0 ... 1.0
+
+    // controlModeMotorForces
+    float motorForces[STABILIZER_NR_OF_MOTORS]; // N
   };
 
   control_mode_t controlMode;
